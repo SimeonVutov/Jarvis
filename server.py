@@ -856,7 +856,13 @@ async def list_models():
             for m in result.get("models",[])
         ], "configured": MODELS}
     except Exception as e:
-        return {"error": str(e), "models": [], "configured": MODELS}
+        # Log the detailed error server-side, but do not expose it to the client
+        print(f"Error listing models: {e}")
+        return {
+            "error": "An internal error occurred while listing models.",
+            "models": [],
+            "configured": MODELS,
+        }
 
 @app.post("/api/models/pull")
 async def pull_model(body: PullRequest):
