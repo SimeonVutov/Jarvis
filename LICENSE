@@ -1,0 +1,35 @@
+Jarvis Personal Intelligence System License
+Copyright (c) 2026 Simeon Vutov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software under the following exact conditions:
+
+1. NON-COMMERCIAL USE ONLY
+The Software may not be used, modified, distributed, or hosted for any 
+commercial, promotional, or profit-generating purposes. This includes, but 
+is not limited to, selling the Software, using it to power a paid service 
+(SaaS), or embedding it within a commercial product.
+
+2. MANDATORY ATTRIBUTION & PROJECT ORIGIN
+The concept, system architecture, and project direction for Jarvis were 
+designed solely by Simeon Vutov. The implementation and codebase were 
+generated using AI (Anthropic's Claude) under his direct guidance. 
+
+If you copy, modify, distribute, or use substantial portions of this 
+repository in your own projects, you must provide clear and visible credit. 
+This attribution must explicitly credit "Simeon Vutov" as the "Systems 
+Architect and Project Creator."
+
+3. FREEDOM TO TINKER
+Subject to the Non-Commercial and Attribution clauses above, you are free to 
+clone, modify, and adapt this Software for your own personal, educational, 
+or local usage.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
