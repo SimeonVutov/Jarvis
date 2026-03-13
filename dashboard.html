@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jarvis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<style>
+:root{
+  --bg0:#060b14;--bg1:#090f1d;--bg2:#0c1423;--bg3:#0f1a2e;--bg4:#142035;
+  --card:#0d1829;--border:#1a2d4a;--border2:#243d5e;
+  --cyan:#00c8f0;--cyan2:#0099bb;--cyan3:#00e5ff;
+  --blue:#3d8ef5;--green:#00c97a;--yellow:#f0c040;--orange:#f07830;--red:#f04060;
+  --text:#c8d8f0;--text2:#8899b8;--text3:#4a6080;
+  --font:'DM Sans',sans-serif;--head:'Syne',sans-serif;--mono:'JetBrains Mono',monospace;
+  --r:10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%;overflow:hidden}
+body{background:var(--bg0);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");opacity:.018;pointer-events:none;z-index:9999}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes barGrow{from{width:0}to{width:var(--w)}}
+
+.shell{display:grid;grid-template-columns:220px 1fr;height:100vh;overflow:hidden}
+.sidebar{background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative}
+.sidebar::after{content:'';position:absolute;top:0;right:0;width:1px;height:100%;background:linear-gradient(180deg,transparent,var(--cyan2) 40%,var(--cyan) 50%,var(--cyan2) 60%,transparent);opacity:.25}
+.sidebar-top{padding:22px 18px 18px;border-bottom:1px solid var(--border)}
+.logo{display:flex;align-items:center;gap:9px;margin-bottom:3px}
+.logo-mark{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--cyan2),var(--cyan));display:flex;align-items:center;justify-content:center;font-family:var(--head);font-size:13px;font-weight:800;color:#000;flex-shrink:0}
+.logo-text{font-family:var(--head);font-size:17px;font-weight:800;color:var(--cyan);letter-spacing:3px}
+.logo-sub{font-size:10px;color:var(--text3);letter-spacing:1px;font-family:var(--mono)}
+.nav{flex:1;padding:8px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;cursor:pointer;color:var(--text3);font-size:12.5px;font-weight:500;border-left:2px solid transparent;transition:all .18s;user-select:none}
+.nav-item:hover{color:var(--text);background:rgba(0,200,240,.04)}
+.nav-item.active{color:var(--cyan);border-left-color:var(--cyan);background:linear-gradient(90deg,rgba(0,200,240,.08),transparent)}
+.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.nav-badge{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--cyan);background:rgba(0,200,240,.12);padding:1px 5px;border-radius:4px}
+.sidebar-bottom{padding:14px 18px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.enc-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--green)}
+.enc-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2.5s ease-in-out infinite}
+.lock-btn{background:none;border:1px solid var(--border);color:var(--text3);padding:3px 9px;border-radius:5px;cursor:pointer;font-size:11px;transition:all .18s}
+.lock-btn:hover{border-color:var(--red);color:var(--red)}
+.main{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.topbar{background:var(--bg1);border-bottom:1px solid var(--border);padding:0 26px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-page{font-family:var(--head);font-size:13px;font-weight:700;color:var(--text)}
+.topbar-date{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.page-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.pad{padding:22px 26px;overflow-y:auto;height:100%}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px}
+.card-title{font-size:10px;font-weight:600;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:12px;font-family:var(--mono)}
+.section-head{font-family:var(--head);font-size:19px;font-weight:700;color:var(--text);margin-bottom:16px}
+.btn{padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12.5px;font-weight:500;transition:all .16s;font-family:var(--font)}
+.btn-primary{background:var(--cyan);color:#000;font-weight:600}
+.btn-primary:hover{background:var(--cyan3);transform:translateY(-1px)}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.btn-ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+.btn-danger{background:transparent;border:1px solid rgba(240,64,96,.35);color:var(--red)}
+.btn-danger:hover{background:rgba(240,64,96,.1)}
+.btn-sm{padding:3px 9px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+.input{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:7px;font-size:13px;font-family:var(--font);outline:none;width:100%;transition:border-color .2s}
+.input:focus{border-color:var(--cyan)}
+.input::placeholder{color:var(--text3)}
+.tag{display:inline-flex;align-items:center;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;font-family:var(--mono);letter-spacing:.5px}
+.tag-general{background:rgba(61,142,245,.15);color:var(--blue)}
+.tag-coding{background:rgba(240,120,48,.15);color:var(--orange)}
+.tag-study{background:rgba(0,201,122,.15);color:var(--green)}
+.spinner{width:15px;height:15px;border:2px solid var(--border2);border-top-color:var(--cyan);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+
+/* Lock screen */
+.lock{position:fixed;inset:0;background:var(--bg0);display:flex;align-items:center;justify-content:center;z-index:100}
+.lock-ring{position:absolute;border-radius:50%;border:1px solid var(--cyan);opacity:.06;animation:pulse 4s ease-in-out infinite}
+.lock-box{position:relative;z-index:1;width:350px;animation:fadeInUp .5s ease}
+.lock-j{font-family:var(--head);font-size:70px;font-weight:800;color:var(--cyan);line-height:1;text-align:center;text-shadow:0 0 40px rgba(0,200,240,.4)}
+.lock-sub{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:3px;text-align:center;margin-top:4px;margin-bottom:36px}
+.lock-form{background:var(--bg2);border:1px solid var(--border);border-radius:13px;padding:26px}
+.lock-lbl{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:1px;margin-bottom:5px}
+.lock-inp{background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:11px 14px;border-radius:7px;font-size:14px;font-family:var(--mono);outline:none;width:100%;transition:all .2s}
+.lock-inp:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,200,240,.07)}
+.lock-go{width:100%;padding:11px;border-radius:7px;border:none;background:linear-gradient(135deg,var(--cyan2),var(--cyan));color:#000;font-family:var(--head);font-size:13px;font-weight:700;cursor:pointer;margin-top:13px;transition:all .2s;letter-spacing:1px}
+.lock-go:hover{transform:translateY(-1px);box-shadow:0 4px 18px rgba(0,200,240,.3)}
+.lock-go:disabled{opacity:.5;transform:none}
+.lock-err{font-size:12px;color:var(--red);margin-top:8px;text-align:center}
+.lock-hint{font-size:10px;color:var(--text3);text-align:center;margin-top:10px}
+
+/* Chat */
+.chat-shell{display:grid;grid-template-columns:255px 1fr;height:100%;overflow:hidden}
+.chat-sessions{background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.chat-sess-head{padding:14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.chat-sess-title{font-family:var(--head);font-size:12.5px;font-weight:700;color:var(--text)}
+.chat-sess-list{flex:1;overflow-y:auto;padding:7px}
+.sess-item{padding:9px 11px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:all .14s;margin-bottom:3px}
+.sess-item:hover{background:var(--bg3);border-color:var(--border)}
+.sess-item.active{background:rgba(0,200,240,.07);border-color:rgba(0,200,240,.2)}
+.sess-date{font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:2px}
+.sess-summary{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.chat-main{display:flex;flex-direction:column;overflow:hidden;background:var(--bg0)}
+.chat-hdr{padding:18px 24px 14px;border-bottom:1px solid var(--border);background:var(--bg1);flex-shrink:0}
+.chat-welcome{font-family:var(--head);font-size:20px;font-weight:800;color:var(--text);margin-bottom:3px}
+.chat-welcome span{color:var(--cyan)}
+.chat-meta{display:flex;align-items:center;gap:10px}
+.mode-badge{display:flex;align-items:center;gap:5px;padding:3px 11px;border-radius:20px;font-family:var(--mono);font-size:11px;font-weight:500;transition:all .3s}
+.mode-badge.general{background:rgba(61,142,245,.12);border:1px solid rgba(61,142,245,.25);color:var(--blue)}
+.mode-badge.coding{background:rgba(240,120,48,.12);border:1px solid rgba(240,120,48,.25);color:var(--orange)}
+.mode-badge.study{background:rgba(0,201,122,.12);border:1px solid rgba(0,201,122,.25);color:var(--green)}
+.mode-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+.chat-model{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.searching{font-size:11px;color:var(--yellow);font-family:var(--mono);animation:pulse 1.5s infinite}
+.chat-msgs{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:4px}
+.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text3)}
+.chat-empty-icon{font-size:38px;opacity:.28}
+.chat-empty-title{font-family:var(--head);font-size:15px}
+.chat-empty-sub{font-size:11px;font-family:var(--mono)}
+.msg-row{animation:msgIn .22s ease}
+.msg-row.user{display:flex;justify-content:flex-end}
+.msg-row.assistant{display:flex;justify-content:flex-start}
+.msg-user-bubble{max-width:72%;background:linear-gradient(135deg,#0d2a50,#0f3260);border:1px solid rgba(61,142,245,.22);border-radius:15px 15px 4px 15px;padding:11px 14px;font-size:13.5px;line-height:1.65;color:var(--text);box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.msg-ai-wrap{display:flex;gap:11px;max-width:100%;align-items:flex-start}
+.msg-ai-av{width:26px;height:26px;border-radius:7px;flex-shrink:0;margin-top:1px;background:linear-gradient(135deg,var(--cyan2),var(--cyan));display:flex;align-items:center;justify-content:center;font-family:var(--head);font-size:11px;font-weight:800;color:#000}
+.msg-ai-body{flex:1;min-width:0}
+.msg-ai-lbl{font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:5px}
+.md{font-size:13.5px;line-height:1.8;color:var(--text)}
+.md p{margin-bottom:.75em}.md p:last-child{margin-bottom:0}
+.md h1,.md h2,.md h3{font-family:var(--head);font-weight:700;color:var(--text);margin:1.1em 0 .4em}
+.md h1{font-size:17px}.md h2{font-size:15px}.md h3{font-size:14px}
+.md code{font-family:var(--mono);font-size:12px;background:rgba(0,200,240,.09);color:var(--cyan);padding:1px 5px;border-radius:4px}
+.md pre{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:7px;padding:12px 14px;margin:8px 0;overflow-x:auto}
+.md pre code{background:none;color:var(--text);padding:0;font-size:12.5px}
+.md ul,.md ol{padding-left:18px;margin:.4em 0}.md li{margin:.25em 0}
+.md strong{color:var(--text);font-weight:600}.md em{color:var(--text2)}
+.md a{color:var(--cyan);text-decoration:none}.md a:hover{text-decoration:underline}
+.md blockquote{border-left:3px solid var(--border2);padding-left:12px;color:var(--text2);margin:.7em 0}
+.md table{width:100%;border-collapse:collapse;margin:.7em 0;font-size:12.5px}
+.md th{background:var(--bg3);border:1px solid var(--border);padding:6px 11px;color:var(--text);font-weight:600;text-align:left}
+.md td{border:1px solid var(--border);padding:6px 11px;color:var(--text2)}
+.cursor{display:inline-block;width:2px;height:1em;background:var(--cyan);margin-left:2px;vertical-align:middle;animation:blink .85s step-end infinite}
+.chat-input-area{padding:14px 20px 18px;border-top:1px solid var(--border);background:var(--bg1);flex-shrink:0}
+.chat-input-wrap{display:flex;align-items:flex-end;gap:9px;background:var(--bg2);border:1px solid var(--border2);border-radius:11px;padding:9px 12px;transition:border-color .2s}
+.chat-input-wrap:focus-within{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,200,240,.05)}
+.chat-ta{flex:1;background:none;border:none;outline:none;resize:none;color:var(--text);font-family:var(--font);font-size:13.5px;line-height:1.6;max-height:150px;min-height:22px;height:22px}
+.chat-ta::placeholder{color:var(--text3)}
+.chat-send{width:32px;height:32px;border-radius:7px;border:none;background:var(--cyan);color:#000;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .16s;font-size:14px}
+.chat-send:hover{background:var(--cyan3);transform:scale(1.05)}
+.chat-send:disabled{background:var(--border2);color:var(--text3);transform:none;cursor:not-allowed}
+.chat-hint{display:flex;align-items:center;justify-content:space-between;margin-top:7px;padding:0 1px}
+.hint-txt{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.new-chat-btn{background:none;border:1px solid var(--border2);color:var(--text3);padding:3px 10px;border-radius:5px;cursor:pointer;font-size:11px;font-family:var(--mono);transition:all .18s}
+.new-chat-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+
+/* Home */
+.greeting{background:linear-gradient(135deg,var(--bg3),rgba(0,200,240,.04));border:1px solid var(--border);border-radius:13px;padding:24px;margin-bottom:18px;position:relative;overflow:hidden;animation:fadeIn .4s ease}
+.greeting::before{content:'';position:absolute;top:-30px;right:-30px;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,rgba(0,200,240,.07),transparent 70%)}
+.g-name{font-family:var(--head);font-size:24px;font-weight:800;color:var(--cyan);margin-bottom:3px}
+.g-date{font-size:12px;color:var(--text2)}
+.g-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.g-block{background:rgba(0,0,0,.2);border-radius:7px;padding:12px;border:1px solid var(--border)}
+.g-lbl{font-size:9px;color:var(--text3);font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.g-val{font-size:12.5px;color:var(--text)}
+.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.home-full{grid-column:1/-1}
+.w-main{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+.w-temp{font-family:var(--head);font-size:40px;font-weight:800;color:var(--cyan);line-height:1}
+.w-desc{font-size:14px;color:var(--text);margin-bottom:3px}
+.w-sub{font-size:11px;color:var(--text2)}
+.w-hourly{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px}
+.w-hour{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 10px;text-align:center;min-width:58px;flex-shrink:0}
+.wh-time{font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:3px}
+.wh-temp{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px}
+.rem-item{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:6px;margin-bottom:5px;border-left:3px solid var(--yellow);background:rgba(255,255,255,.018);border-top:1px solid var(--border);border-right:1px solid var(--border);border-bottom:1px solid var(--border);animation:slideIn .2s ease}
+.rem-item.urgent{border-left-color:var(--red)}.rem-item.soon{border-left-color:var(--orange)}
+.rem-when{font-size:10px;font-family:var(--mono);color:var(--text3);min-width:68px}
+.rem-title{flex:1;font-size:12.5px;color:var(--text)}
+.rem-btn{background:none;border:1px solid var(--border2);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;transition:all .18s}
+.rem-btn:hover{border-color:var(--green);color:var(--green)}
+.j-entry{padding:7px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:9px}
+.j-entry:last-child{border-bottom:none}
+.j-date{font-size:10px;font-family:var(--mono);color:var(--text3);min-width:68px;padding-top:2px}
+.j-text{font-size:12.5px;color:var(--text2);line-height:1.5}
+
+/* News */
+.news-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.news-tab{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text3);font-size:11.5px;font-weight:600;cursor:pointer;transition:all .16s;font-family:var(--font)}
+.news-tab.active{background:rgba(0,200,240,.1);border-color:rgba(0,200,240,.3);color:var(--cyan)}
+.news-tab:hover:not(.active){border-color:var(--border2);color:var(--text)}
+.feed-section{margin-bottom:20px}
+.feed-head{font-size:11px;color:var(--text3);font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.news-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.news-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:12px;transition:border-color .18s}
+.news-card:hover{border-color:var(--border2)}
+.news-title{font-size:12.5px;font-weight:500;color:var(--text);line-height:1.4;margin-bottom:5px}
+.news-title a{color:inherit;text-decoration:none}.news-title a:hover{color:var(--cyan)}
+.news-sum{font-size:11.5px;color:var(--text3);line-height:1.5;margin-bottom:5px}
+.news-pub{font-size:10px;color:var(--text3);font-family:var(--mono)}
+
+/* Fitness */
+.fit-controls{display:flex;gap:8px;margin-bottom:16px}
+.fit-period-btn{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text3);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--mono);transition:all .16s}
+.fit-period-btn.active{background:rgba(0,200,240,.1);border-color:var(--cyan);color:var(--cyan)}
+.fit-chart{position:relative;height:180px;display:flex;align-items:flex-end;gap:2px;overflow:hidden;padding:0 4px}
+.fit-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.fit-bar-track{width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:140px}
+.fit-bar-cal{border-radius:2px 2px 0 0;background:var(--cyan);opacity:.8;min-height:2px;transition:height .5s ease;cursor:pointer;width:100%}
+.fit-bar-wt{border-radius:2px 2px 0 0;background:var(--orange);opacity:.7;min-height:2px;transition:height .4s ease;width:100%;margin-top:2px}
+.fit-bar-lbl{font-size:8px;color:var(--text3);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center}
+.fit-legend{display:flex;gap:14px;margin-top:8px;margin-bottom:12px}
+.fit-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)}
+.fit-leg-dot{width:10px;height:10px;border-radius:2px}
+.fit-log-form{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:8px;margin-bottom:16px;align-items:flex-end}
+.form-field{display:flex;flex-direction:column;gap:4px}
+.form-lbl{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase}
+
+/* Stats */
+.stat-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px;text-align:center;animation:fadeIn .3s ease}
+.stat-card:hover{border-color:var(--border2)}
+.stat-num{font-family:var(--head);font-size:34px;font-weight:800;color:var(--cyan)}
+.stat-lbl{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bar-lbl{width:64px;font-family:var(--mono);font-size:11px;color:var(--text2);text-align:right}
+.bar-track{flex:1;background:var(--bg3);border-radius:3px;height:20px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:#000;font-family:var(--mono);transition:width .6s ease}
+.bar-general{background:var(--blue)}.bar-coding{background:var(--orange)}.bar-study{background:var(--green)}
+
+/* Memory */
+.mem-table{width:100%;border-collapse:collapse}
+.mem-table th{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;padding:7px 11px;border-bottom:1px solid var(--border);text-align:left}
+.mem-table td{padding:9px 11px;font-size:12.5px;border-bottom:1px solid rgba(26,45,74,.5);vertical-align:top;color:var(--text2)}
+.mem-table tr:hover td{background:rgba(255,255,255,.012)}
+
+/* Reminders page */
+.rem-form{display:grid;grid-template-columns:1fr 150px 1fr auto;gap:8px;margin-bottom:18px;align-items:flex-end}
+
+/* Conversations */
+.convs-layout{display:grid;grid-template-columns:270px 1fr;gap:0;height:100%;overflow:hidden}
+.convs-list{background:var(--bg1);border-right:1px solid var(--border);overflow-y:auto;padding:8px}
+.conv-item{padding:10px 12px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin-bottom:3px;transition:all .14s}
+.conv-item:hover{background:var(--bg3)}.conv-item.active{background:rgba(0,200,240,.07);border-color:rgba(0,200,240,.18)}
+.conv-view{overflow-y:auto;padding:22px 24px}
+.mb{margin-bottom:16px;animation:fadeIn .18s ease}
+.mb-role{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.mb-role.user{color:var(--blue)}.mb-role.assistant{color:var(--green)}
+.mb-content{font-size:12.5px;line-height:1.7;background:var(--bg3);padding:11px 14px;border-radius:7px;color:var(--text2)}
+.mb-content.user{background:rgba(13,42,80,.5)}
+
+/* Models */
+.model-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:11px}
+.model-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.model-card:hover{border-color:var(--border2)}
+.model-name{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--text);margin-bottom:3px}
+.model-meta{font-size:11px;color:var(--text3);margin-bottom:11px}
+.config-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(0,200,240,.1);border:1px solid rgba(0,200,240,.2);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--cyan);font-family:var(--mono);margin-bottom:6px}
+
+/* Profile */
+.profile-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.profile-full{grid-column:1/-1}
+.profile-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+
+/* News config */
+.source-list{max-height:360px;overflow-y:auto}
+.source-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid rgba(26,45,74,.5)}
+.source-item:last-child{border-bottom:none}
+.source-toggle{width:36px;height:20px;border-radius:10px;border:none;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
+.source-toggle.on{background:var(--cyan)}.source-toggle.off{background:var(--border2)}
+.source-toggle::after{content:'';position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s}
+.source-toggle.on::after{left:19px}.source-toggle.off::after{left:3px}
+.source-name{flex:1;font-size:12.5px;color:var(--text)}
+.source-country{font-size:10px;color:var(--text3);font-family:var(--mono)}
+
+.no-data{color:var(--text3);font-size:12.5px;padding:10px 0}
+.pull-form{display:flex;gap:8px;margin-bottom:7px}
+.pull-status{font-size:11px;color:var(--text3);font-family:var(--mono);min-height:16px;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo} = React;
+const API = '';
+
+const api = (path,opts={}) => fetch(API+path,opts).then(r=>{if(!r.ok)throw new Error(r.status);return r.json()});
+const daysUntil = d => Math.round((new Date(d)-new Date(new Date().toDateString()))/86400000);
+const fmtSize = b => b?(b/1e9).toFixed(1)+' GB':'—';
+const stripHtml = s => (s||'').replace(/<[^>]+>/g,'');
+const wIcon = d=>{d=(d||'').toLowerCase();if(d.includes('sun')||d.includes('clear'))return'☀️';if(d.includes('cloud'))return'☁️';if(d.includes('rain')||d.includes('shower'))return'🌧️';if(d.includes('snow'))return'❄️';if(d.includes('thunder'))return'⛈️';if(d.includes('fog')||d.includes('mist'))return'🌫️';return'🌤️';};
+
+function MD({src}){
+  const html = useMemo(()=>{
+    if(!src) return '';
+    try{marked.setOptions({breaks:true,gfm:true});return marked.parse(src);}
+    catch{return src;}
+  },[src]);
+  return <div className="md" dangerouslySetInnerHTML={{__html:html}}/>;
+}
+
+// ── Lock screen ────────────────────────────────────────────────
+function LockScreen({onUnlock}){
+  const [pw,setPw]=useState('');const [err,setErr]=useState('');const [loading,setLoading]=useState(false);
+  async function submit(e){
+    e.preventDefault();if(!pw)return;
+    setLoading(true);setErr('');
+    try{
+      const r=await api('/api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+      if(r.success)onUnlock(r.user);else setErr('Wrong password');
+    }catch{setErr('Connection error — is the server running?');}
+    setLoading(false);
+  }
+  return(
+    <div className="lock">
+      <div style={{position:'absolute',inset:0}}>
+        {[180,320,460,600].map((s,i)=>(
+          <div key={i} className="lock-ring" style={{width:s,height:s,top:`calc(50% - ${s/2}px)`,left:`calc(50% - ${s/2}px)`,animationDelay:`${i*.7}s`}}/>
+        ))}
+      </div>
+      <div className="lock-box">
+        <div className="lock-j">J</div>
+        <div className="lock-sub">PERSONAL AI ASSISTANT</div>
+        <form className="lock-form" onSubmit={submit}>
+          <div className="lock-lbl">PASSPHRASE</div>
+          <input className="lock-inp" type="password" placeholder="enter your key…" value={pw} onChange={e=>setPw(e.target.value)} autoFocus disabled={loading}/>
+          {err&&<div className="lock-err">{err}</div>}
+          <button className="lock-go" disabled={loading||!pw}>{loading?'VERIFYING…':'UNLOCK →'}</button>
+          <div className="lock-hint">AES-256-GCM · password never stored · all data local</div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ─────────────────────────────────────────────────────
+const NAV=[
+  {id:'home',icon:'⌂',label:'Home'},
+  {id:'chat',icon:'◈',label:'Chat',badge:'AI'},
+  {id:'news',icon:'◉',label:'Briefing'},
+  {id:'convs',icon:'◫',label:'History'},
+  {id:'stats',icon:'◷',label:'Stats'},
+  {id:'memory',icon:'◎',label:'Memory'},
+  {id:'fitness',icon:'♦',label:'Fitness'},
+  {id:'remind',icon:'◌',label:'Reminders'},
+  {id:'profile',icon:'◐',label:'Profile'},
+  {id:'models',icon:'◑',label:'Models'},
+];
+function Sidebar({page,setPage,onLock}){
+  const now=new Date();
+  const d=now.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+  return(
+    <aside className="sidebar">
+      <div className="sidebar-top">
+        <div className="logo"><div className="logo-mark">J</div><div className="logo-text">JARVIS</div></div>
+        <div className="logo-sub">{d}</div>
+      </div>
+      <nav className="nav">
+        {NAV.map((n,i)=>(
+          <div key={n.id} className={`nav-item${page===n.id?' active':''}`} onClick={()=>setPage(n.id)}
+               style={{animation:`slideIn .28s ease ${i*.04}s both`}}>
+            <span className="nav-icon">{n.icon}</span>
+            <span>{n.label}</span>
+            {n.badge&&<span className="nav-badge">{n.badge}</span>}
+          </div>
+        ))}
+      </nav>
+      <div className="sidebar-bottom">
+        <div className="enc-status"><div className="enc-dot"/><span>Encrypted</span></div>
+        <button className="lock-btn" onClick={onLock}>Lock</button>
+      </div>
+    </aside>
+  );
+}
+
+// ── Chat ─────────────────────────────────────────────────────────
+function ChatPage(){
+  const [sessions,setSessions]=useState([]);
+  const [sid,setSid]=useState(null);
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState('');
+  const [streaming,setStreaming]=useState(false);
+  const [mode,setMode]=useState('general');
+  const [searching,setSearching]=useState(false);
+  const [streamText,setStreamText]=useState('');
+  const [models,setModels]=useState({});
+  const bottomRef=useRef(null);
+  const taRef=useRef(null);
+  const now=new Date();const h=now.getHours();
+  const period=h<5?'night':h<12?'morning':h<17?'afternoon':'evening';
+
+  useEffect(()=>{
+    api('/api/conversations?limit=40').then(setSessions).catch(()=>{});
+    api('/api/stats').then(d=>setModels(d.models||{})).catch(()=>{});
+  },[]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:'smooth'})},[messages,streamText]);
+
+  async function loadSess(id){
+    setSid(id);setMessages([]);setStreamText('');
+    const data=await api(`/api/conversations/${id}`);
+    setMessages(data||[]);
+  }
+  function newChat(){setSid(null);setMessages([]);setStreamText('');setMode('general');}
+
+  async function send(){
+    const text=input.trim();if(!text||streaming)return;
+    setInput('');if(taRef.current)taRef.current.style.height='22px';
+    setMessages(p=>[...p,{role:'user',content:text,ts:new Date().toISOString(),mode}]);
+    setStreaming(true);setStreamText('');setSearching(false);
+    try{
+      const resp=await fetch(API+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,session_id:sid,mode})});
+      const reader=resp.body.getReader();const dec=new TextDecoder();
+      let buf='';let ai='';let newSid=sid;
+      while(true){
+        const{done,value}=await reader.read();if(done)break;
+        buf+=dec.decode(value,{stream:true});
+        const lines=buf.split('\n');buf=lines.pop()||'';
+        for(const line of lines){
+          if(!line.startsWith('data:'))continue;
+          try{
+            const ev=JSON.parse(line.slice(5).trim());
+            if(ev.type==='mode')setMode(ev.mode);
+            else if(ev.type==='status'&&ev.text?.includes('Searching'))setSearching(true);
+            else if(ev.type==='delta'){setSearching(false);ai+=ev.delta;setStreamText(ai);}
+            else if(ev.type==='done'){newSid=ev.session_id;setSid(ev.session_id);}
+            else if(ev.type==='error'){ai='Error: '+ev.message;setStreamText(ai);}
+          }catch{}
+        }
+      }
+      setMessages(p=>[...p,{role:'assistant',content:ai,ts:new Date().toISOString(),mode}]);
+      setStreamText('');
+      if(newSid&&!sessions.find(s=>s.id===newSid))api('/api/conversations?limit=40').then(setSessions).catch(()=>{});
+    }catch(e){
+      setMessages(p=>[...p,{role:'assistant',content:'Connection error — is Ollama running?',ts:new Date().toISOString(),mode}]);
+      setStreamText('');
+    }
+    setStreaming(false);setSearching(false);
+  }
+  function onKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}
+  function onInput(e){setInput(e.target.value);const ta=e.target;ta.style.height='22px';ta.style.height=Math.min(ta.scrollHeight,150)+'px';}
+
+  const hasContent=messages.length>0||streamText;
+  return(
+    <div className="chat-shell">
+      <div className="chat-sessions">
+        <div className="chat-sess-head">
+          <span className="chat-sess-title">Sessions</span>
+          <button className="new-chat-btn" onClick={newChat}>+ New</button>
+        </div>
+        <div className="chat-sess-list">
+          {sessions.length===0&&<div style={{color:'var(--text3)',fontSize:11,padding:12,fontFamily:'var(--mono)'}}>No history yet</div>}
+          {sessions.map(s=>{
+            const d=daysUntil(s.date);const when=d===0?'Today':d===-1?'Yesterday':s.date;
+            return(
+              <div key={s.id} className={`sess-item${sid===s.id?' active':''}`} onClick={()=>loadSess(s.id)}>
+                <div className="sess-date">{when} · {s.msg_count||0} msgs</div>
+                <div className="sess-summary">{s.summary||'Conversation'}</div>
+                <div style={{display:'flex',alignItems:'center',gap:5}}>
+                  <span className={`tag tag-${s.mode||'general'}`}>{(s.mode||'general').toUpperCase()}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="chat-main">
+        <div className="chat-hdr">
+          <div className="chat-welcome">Good {period}, <span>sir</span></div>
+          <div className="chat-meta">
+            <div className={`mode-badge ${mode}`}><div className="mode-dot"/>{mode.toUpperCase()}</div>
+            <span className="chat-model">{models[mode]||''}</span>
+            {searching&&<span className="searching">◉ searching…</span>}
+          </div>
+        </div>
+        <div className="chat-msgs">
+          {!hasContent&&(
+            <div className="chat-empty">
+              <div className="chat-empty-icon">◈</div>
+              <div className="chat-empty-title">Ask me anything</div>
+              <div className="chat-empty-sub">Mode auto-switches · web search · all encrypted</div>
+            </div>
+          )}
+          {messages.map((m,i)=>(
+            <div key={i} className={`msg-row ${m.role}`}>
+              {m.role==='user'?(
+                <div className="msg-user-bubble">{m.content}</div>
+              ):(
+                <div className="msg-ai-wrap">
+                  <div className="msg-ai-av">J</div>
+                  <div className="msg-ai-body">
+                    <div className="msg-ai-lbl">JARVIS · {(m.mode||mode).toUpperCase()}</div>
+                    <MD src={m.content}/>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {streamText&&(
+            <div className="msg-row assistant">
+              <div className="msg-ai-wrap">
+                <div className="msg-ai-av">J</div>
+                <div className="msg-ai-body">
+                  <div className="msg-ai-lbl">JARVIS · {mode.toUpperCase()}</div>
+                  <MD src={streamText}/><span className="cursor"/>
+                </div>
+              </div>
+            </div>
+          )}
+          {streaming&&!streamText&&!searching&&(
+            <div className="msg-row assistant">
+              <div className="msg-ai-wrap">
+                <div className="msg-ai-av">J</div>
+                <div className="msg-ai-body"><div className="msg-ai-lbl">JARVIS</div><span className="cursor"/></div>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef}/>
+        </div>
+        <div className="chat-input-area">
+          <div className="chat-input-wrap">
+            <textarea ref={taRef} className="chat-ta" placeholder={`Message Jarvis… (${mode} mode)`}
+              value={input} onChange={onInput} onKeyDown={onKey} disabled={streaming} rows={1}/>
+            <button className="chat-send" onClick={send} disabled={streaming||!input.trim()}>
+              {streaming?<span className="spinner" style={{width:13,height:13}}/>:'↑'}
+            </button>
+          </div>
+          <div className="chat-hint">
+            <span className="hint-txt">↵ send · shift+↵ newline · mode auto-detects</span>
+            {sid&&<span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>session #{sid}</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Home ──────────────────────────────────────────────────────────
+function HomePage(){
+  const [data,setData]=useState(null);const [weather,setWeather]=useState(null);
+  useEffect(()=>{api('/api/dashboard').then(setData).catch(()=>{});api('/api/weather').then(setWeather).catch(()=>{});},[]);
+  async function doneRem(id){await api(`/api/reminders/${id}/done`,{method:'PATCH'});setData(d=>d?{...d,reminders:d.reminders.filter(r=>r.id!==id)}:d);}
+  if(!data)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',gap:10,color:'var(--text3)'}}><div className="spinner"/>Loading…</div>;
+  const fy=data.fitness?.yesterday;const ft=data.fitness?.today;
+  return(
+    <div className="pad">
+      <div className="greeting">
+        <div className="g-name">{data.greeting}</div>
+        <div className="g-date">{data.weekday}, {data.date}</div>
+        <div className="g-grid">
+          <div className="g-block"><div className="g-lbl">Yesterday</div><div className="g-val">{fy?(fy.calories?fy.calories+' kcal':'—')+(fy.workout?' · '+fy.workout:''):'Nothing logged'}</div></div>
+          <div className="g-block"><div className="g-lbl">Today</div><div className="g-val">{ft?ft.calories+' kcal':'Not logged'}</div></div>
+          <div className="g-block"><div className="g-lbl">Sessions</div><div className="g-val">{data.total_sessions} total</div></div>
+        </div>
+      </div>
+      <div className="home-grid">
+        <div className="card">
+          <div className="card-title">Weather — {weather?.city||''}</div>
+          {weather&&!weather.error?(
+            <>
+              <div className="w-main">
+                <div className="w-temp">{weather.temp_c}°</div>
+                <div><div className="w-desc">{wIcon(weather.desc)} {weather.desc}</div><div className="w-sub">Feels {weather.feels_like}° · {weather.humidity}% · {weather.wind_kmph} km/h</div><div className="w-sub">↑{weather.max_c}° ↓{weather.min_c}°</div></div>
+              </div>
+              <div className="w-hourly">{(weather.hourly||[]).map((h,i)=>(
+                <div key={i} className="w-hour">
+                  <div className="wh-time">{String(h.time).padStart(4,'0').replace(/(\d{2})(\d{2})/,'$1:$2')}</div>
+                  <div className="wh-temp">{h.temp}°</div>
+                  <div>{wIcon(h.desc)}</div>
+                </div>
+              ))}</div>
+            </>
+          ):<div className="no-data">Weather unavailable</div>}
+        </div>
+        <div className="card">
+          <div className="card-title">Upcoming reminders</div>
+          {data.reminders?.length===0&&<div className="no-data">No upcoming reminders</div>}
+          {(data.reminders||[]).map(r=>{const d=daysUntil(r.due_date);const cls=d<=1?'urgent':d<=3?'soon':'';const when=d===0?'TODAY':d===1?'Tomorrow':`In ${d}d`;
+            return(<div key={r.id} className={`rem-item ${cls}`}><span className="rem-when">{when}</span><span className="rem-title">{r.title}</span><button className="rem-btn" onClick={()=>doneRem(r.id)}>✓</button></div>);
+          })}
+        </div>
+        <div className="card home-full">
+          <div className="card-title">Recent journal</div>
+          {data.recent_journal?.length===0&&<div className="no-data">No journal entries yet.</div>}
+          {(data.recent_journal||[]).map((j,i)=>(
+            <div key={i} className="j-entry"><span className="j-date">{j.ts}</span><span className="j-text">{j.content}</span></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── News ──────────────────────────────────────────────────────────
+function NewsPage(){
+  const [data,setData]=useState(null);const [tab,setTab]=useState(null);
+  useEffect(()=>{api('/api/news').then(d=>{setData(d);if(!tab&&Object.keys(d||{}).length>0)setTab(Object.keys(d)[0]);}).catch(()=>{});},[]); 
+  const countries=data?Object.keys(data):[];
+  const countryData=data&&tab?data[tab]:{};
+  return(
+    <div className="pad">
+      <div className="section-head">Daily Briefing</div>
+      <div className="news-tabs">
+        {countries.map(c=>(
+          <button key={c} className={`news-tab${tab===c?' active':''}`} onClick={()=>setTab(c)}>{c}</button>
+        ))}
+        {!data&&<span style={{color:'var(--text3)',fontSize:12,display:'flex',alignItems:'center',gap:8}}><div className="spinner"/>Loading…</span>}
+        {data&&countries.length===0&&<span style={{color:'var(--text3)',fontSize:12}}>No news sources configured. Set them up in Profile → News Sources.</span>}
+      </div>
+      {tab&&countryData&&Object.entries(countryData).map(([sid,feed])=>(
+        <div key={sid} className="feed-section">
+          <div className="feed-head">{feed.name}</div>
+          <div className="news-grid">
+            {(feed.items||[]).filter(i=>i.title&&!i.title.startsWith('[')).map((n,i)=>(
+              <div key={i} className="news-card" style={{animation:`fadeIn .15s ease ${i*.03}s both`}}>
+                <div className="news-title"><a href={n.link||'#'} target="_blank" rel="noreferrer">{n.title}</a></div>
+                {n.summary&&<div className="news-sum">{stripHtml(n.summary).substring(0,200)}</div>}
+                <div className="news-pub">{n.published}</div>
+              </div>
+            ))}
+            {(feed.items||[]).length===0&&<div className="no-data" style={{gridColumn:'1/-1'}}>Feed unavailable</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Fitness ───────────────────────────────────────────────────────
+function FitnessPage(){
+  const [items,setItems]=useState([]);
+  const [period,setPeriod]=useState('month');
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [cal,setCal]=useState('');const [wt,setWt]=useState('');const [workout,setWorkout]=useState('');const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{api(`/api/fitness?period=${period}`).then(setItems).catch(()=>{});},[period]);
+
+  const maxCal=Math.max(...items.map(f=>f.calories||0),2000);
+  const maxWt=Math.max(...items.filter(f=>f.weight).map(f=>f.weight),100);
+  const minWt=Math.min(...items.filter(f=>f.weight).map(f=>f.weight),50);
+  const wtRange=maxWt-minWt||1;
+
+  async function logFitness(){
+    if(!date)return;setSaving(true);
+    try{
+      await api('/api/fitness',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,calories:cal?parseInt(cal):null,weight:wt?parseFloat(wt):null,workout})});
+      api(`/api/fitness?period=${period}`).then(setItems);
+      setCal('');setWt('');setWorkout('');
+    }catch{}
+    setSaving(false);
+  }
+
+  return(
+    <div className="pad">
+      <div className="section-head">Fitness & Nutrition</div>
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-title">Log entry</div>
+        <div className="fit-log-form">
+          <div className="form-field"><label className="form-lbl">Date</label><input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="form-field"><label className="form-lbl">Calories</label><input className="input" type="number" placeholder="kcal" value={cal} onChange={e=>setCal(e.target.value)}/></div>
+          <div className="form-field"><label className="form-lbl">Weight (kg)</label><input className="input" type="number" step="0.1" placeholder="kg" value={wt} onChange={e=>setWt(e.target.value)}/></div>
+          <div className="form-field"><label className="form-lbl">Workout</label><input className="input" placeholder="e.g. chest, legs" value={workout} onChange={e=>setWorkout(e.target.value)}/></div>
+          <div className="form-field" style={{justifyContent:'flex-end'}}><label className="form-lbl"> </label><button className="btn btn-primary" onClick={logFitness} disabled={saving||!date}>{saving?'Saving…':'Log'}</button></div>
+        </div>
+      </div>
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <div className="card-title" style={{marginBottom:0}}>History</div>
+          <div className="fit-controls">
+            {['week','month','year'].map(p=>(
+              <button key={p} className={`fit-period-btn${period===p?' active':''}`} onClick={()=>setPeriod(p)}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>
+            ))}
+          </div>
+        </div>
+        <div className="fit-legend">
+          <div className="fit-leg-item"><div className="fit-leg-dot" style={{background:'var(--cyan)'}}/><span>Calories</span></div>
+          <div className="fit-leg-item"><div className="fit-leg-dot" style={{background:'var(--orange)'}}/><span>Weight</span></div>
+        </div>
+        {items.length===0?<div className="no-data">No data for this period.</div>:(
+          <div className="fit-chart">
+            {items.map((f,i)=>{
+              const calH=f.calories?Math.max(4,(f.calories/maxCal)*130):0;
+              const wtH=f.weight?Math.max(4,((f.weight-minWt)/wtRange)*60+20):0;
+              return(
+                <div key={i} className="fit-bar-wrap" title={`${f.date}\n${f.calories||0} kcal${f.weight?' · '+f.weight+' kg':''}`}>
+                  <div className="fit-bar-track">
+                    {f.weight&&<div className="fit-bar-wt" style={{height:wtH+'px'}}/>}
+                    {f.calories&&<div className="fit-bar-cal" style={{height:calH+'px'}}/>}
+                  </div>
+                  {items.length<=31&&<div className="fit-bar-lbl">{f.date.slice(5)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <table className="mem-table">
+        <thead><tr><th>Date</th><th>Calories</th><th>Weight</th><th>Workout</th></tr></thead>
+        <tbody>
+          {[...items].reverse().map(f=>(
+            <tr key={f.date}>
+              <td style={{fontFamily:'var(--mono)'}}>{f.date}</td>
+              <td style={{color:'var(--cyan)',fontFamily:'var(--mono)'}}>{f.calories||'—'}</td>
+              <td style={{color:'var(--orange)',fontFamily:'var(--mono)'}}>{f.weight?f.weight+' kg':'—'}</td>
+              <td>{f.workout||'—'}</td>
+            </tr>
+          ))}
+          {items.length===0&&<tr><td colSpan={4} style={{color:'var(--text3)',padding:'14px 11px'}}>No entries yet.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Stats ─────────────────────────────────────────────────────────
+function StatsPage(){
+  const [data,setData]=useState(null);
+  useEffect(()=>{api('/api/stats').then(setData).catch(()=>{})},[]);
+  if(!data)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',gap:10,color:'var(--text3)'}}><div className="spinner"/>Loading…</div>;
+  const t=data.totals||{};const usage=data.usage_by_mode||[];const maxU=Math.max(...usage.map(u=>u.total),1);
+  return(
+    <div className="pad">
+      <div className="section-head">Statistics</div>
+      <div className="stat-cards">
+        {[['Sessions',t.sessions],['Messages',t.messages],['Journal',t.journal],['Memories',t.memories]].map(([l,n],i)=>(
+          <div key={i} className="stat-card" style={{animationDelay:`${i*.07}s`}}>
+            <div className="stat-num">{n||0}</div><div className="stat-lbl">{l.toUpperCase()}</div>
+          </div>
+        ))}
+      </div>
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-title">Messages by mode</div>
+        {usage.map((u,i)=>(
+          <div key={i} className="bar-row">
+            <div className="bar-lbl">{u.mode||'general'}</div>
+            <div className="bar-track">
+              <div className={`bar-fill bar-${u.mode||'general'}`} style={{width:`${(u.total/maxU*100).toFixed(0)}%`}}>{u.total}</div>
+            </div>
+          </div>
+        ))}
+        {usage.length===0&&<div className="no-data">No data yet.</div>}
+      </div>
+      <div className="card">
+        <div className="card-title">Configured models</div>
+        {Object.entries(data.models||{}).map(([k,v])=>(
+          <div key={k} style={{display:'flex',alignItems:'center',gap:10,marginBottom:7}}>
+            <span className={`tag tag-${k}`}>{k.toUpperCase()}</span>
+            <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Memory ────────────────────────────────────────────────────────
+function MemoryPage(){
+  const [items,setItems]=useState([]);const [q,setQ]=useState('');const [loading,setLoading]=useState(false);
+  const timer=useRef(null);
+  useEffect(()=>{load('')},[]);
+  async function load(search){setLoading(true);try{const p=new URLSearchParams({limit:80});if(search)p.set('q',search);const d=await api('/api/memories?'+p);setItems(d||[]);}catch{}setLoading(false);}
+  function onSearch(v){setQ(v);clearTimeout(timer.current);timer.current=setTimeout(()=>load(v),350);}
+  async function del(id){await api(`/api/memories/${id}`,{method:'DELETE'});setItems(its=>its.filter(i=>i.id!==id));}
+  return(
+    <div className="pad">
+      <div className="section-head">Memory Store</div>
+      <div style={{display:'flex',gap:10,marginBottom:14}}>
+        <input className="input" placeholder="Search memories…" value={q} onChange={e=>onSearch(e.target.value)} style={{flex:1}}/>
+        {loading&&<div className="spinner" style={{alignSelf:'center'}}/>}
+      </div>
+      <table className="mem-table">
+        <thead><tr><th>Date</th><th>Category</th><th>Content</th><th></th></tr></thead>
+        <tbody>
+          {items.map(m=>(
+            <tr key={m.id}>
+              <td style={{fontFamily:'var(--mono)',whiteSpace:'nowrap',color:'var(--text3)'}}>{m.ts?.substring(0,10)}</td>
+              <td><span className={`tag tag-${m.tags?.split(',')[0]||'general'}`}>{m.category}</span></td>
+              <td>{m.content}</td>
+              <td><button className="btn btn-danger btn-sm" onClick={()=>del(m.id)}>Delete</button></td>
+            </tr>
+          ))}
+          {items.length===0&&!loading&&<tr><td colSpan={4} style={{color:'var(--text3)',padding:'14px 11px'}}>No memories found.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Reminders ─────────────────────────────────────────────────────
+function RemindersPage(){
+  const [items,setItems]=useState([]);const [title,setTitle]=useState('');const [date,setDate]=useState('');const [desc,setDesc]=useState('');
+  useEffect(()=>{api('/api/reminders').then(setItems).catch(()=>{})},[]);
+  async function add(){if(!title||!date)return;const r=await api('/api/reminders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,due_date:date,description:desc})});setItems(it=>[...it,r].sort((a,b)=>a.due_date.localeCompare(b.due_date)));setTitle('');setDate('');setDesc('');}
+  async function done(id){await api(`/api/reminders/${id}/done`,{method:'PATCH'});setItems(it=>it.filter(i=>i.id!==id));}
+  async function del(id){await api(`/api/reminders/${id}`,{method:'DELETE'});setItems(it=>it.filter(i=>i.id!==id));}
+  return(
+    <div className="pad">
+      <div className="section-head">Reminders</div>
+      <div className="card" style={{marginBottom:18}}>
+        <div className="card-title">Add reminder</div>
+        <div className="rem-form">
+          <div className="form-field"><label className="form-lbl">Title</label><input className="input" placeholder="e.g. Submit assignment" value={title} onChange={e=>setTitle(e.target.value)}/></div>
+          <div className="form-field"><label className="form-lbl">Due date</label><input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="form-field"><label className="form-lbl">Description</label><input className="input" placeholder="Optional" value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+          <div className="form-field" style={{justifyContent:'flex-end'}}><label className="form-lbl"> </label><button className="btn btn-primary" onClick={add}>Add</button></div>
+        </div>
+      </div>
+      {items.length===0&&<div className="no-data">No upcoming reminders.</div>}
+      {items.map(r=>{const d=daysUntil(r.due_date);const cls=d<=1?'urgent':d<=3?'soon':'';const when=d===0?'TODAY':d===1?'Tomorrow':d<0?`${Math.abs(d)}d overdue`:`In ${d}d`;
+        return(
+          <div key={r.id} className={`rem-item ${cls}`} style={{marginBottom:6}}>
+            <span className="rem-when">{when}</span>
+            <span className="rem-title"><strong>{r.title}</strong>{r.description?' — '+r.description:''}</span>
+            <button className="rem-btn" onClick={()=>done(r.id)}>✓ Done</button>
+            <button className="rem-btn" onClick={()=>del(r.id)} style={{marginLeft:4}}>✕</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Conversations ─────────────────────────────────────────────────
+function ConvsPage(){
+  const [sessions,setSessions]=useState([]);const [active,setActive]=useState(null);const [msgs,setMsgs]=useState([]);
+  useEffect(()=>{api('/api/conversations').then(setSessions).catch(()=>{})},[]);
+  async function open(id){setActive(id);const d=await api(`/api/conversations/${id}`);setMsgs(d||[]);}
+  async function del(id){await api(`/api/conversations/${id}`,{method:'DELETE'});setSessions(s=>s.filter(x=>x.id!==id));if(active===id){setActive(null);setMsgs([]);}}
+  return(
+    <div className="convs-layout">
+      <div className="convs-list">
+        {sessions.map(s=>(
+          <div key={s.id} className={`conv-item${active===s.id?' active':''}`} onClick={()=>open(s.id)}>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:2}}>{s.date} · {s.msg_count||0} msgs</div>
+            <div style={{fontSize:12,color:'var(--text2)',marginBottom:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.summary}</div>
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <span className={`tag tag-${s.mode||'general'}`}>{(s.mode||'general').toUpperCase()}</span>
+              <button onClick={e=>{e.stopPropagation();del(s.id)}} style={{marginLeft:'auto',background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:11}}>✕</button>
+            </div>
+          </div>
+        ))}
+        {sessions.length===0&&<div style={{padding:14,color:'var(--text3)',fontSize:11,fontFamily:'var(--mono)'}}>No conversations yet</div>}
+      </div>
+      <div className="conv-view">
+        {!active&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text3)',fontSize:13}}>Select a conversation</div>}
+        {msgs.map((m,i)=>(
+          <div key={i} className="mb">
+            <div className={`mb-role ${m.role}`}>{m.role==='user'?'You':'Jarvis'} · {m.mode||'general'} · {m.ts?.substring(0,16)||''}</div>
+            <div className={`mb-content ${m.role}`}>{m.content}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Profile ───────────────────────────────────────────────────────
+function ProfilePage(){
+  const [profile,setProfile]=useState(null);const [sources,setSources]=useState([]);
+  const [saving,setSaving]=useState(false);const [saved,setSaved]=useState(false);
+  const [name,setName]=useState('');const [brief,setBrief]=useState('');const [city,setCity]=useState('');const [tz,setTz]=useState('');
+
+  useEffect(()=>{
+    api('/api/profile').then(p=>{setProfile(p);setName(p.name||'');setBrief(p.brief||'');setCity(p.city||'');setTz(p.timezone||'');}).catch(()=>{});
+    api('/api/news-sources').then(setSources).catch(()=>{});
+  },[]);
+
+  async function save(){
+    setSaving(true);
+    try{
+      await api('/api/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,brief,city,timezone:tz})});
+      setSaved(true);setTimeout(()=>setSaved(false),2000);
+    }catch{}
+    setSaving(false);
+  }
+
+  async function toggleSource(id){
+    const updated=sources.map(s=>s.id===id?{...s,enabled:!s.enabled}:s);
+    setSources(updated);
+    await api('/api/news-sources',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources:updated})}).catch(()=>{});
+  }
+
+  const countries=[...new Set(sources.map(s=>s.country))];
+
+  return(
+    <div className="pad">
+      <div className="section-head">Profile & Settings</div>
+      <div className="profile-layout">
+        <div className="profile-card">
+          <div className="card-title">Your Profile</div>
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <div className="form-field"><label className="form-lbl">Name</label><input className="input" value={name} onChange={e=>setName(e.target.value)}/></div>
+            <div className="form-field"><label className="form-lbl">City</label><input className="input" value={city} onChange={e=>setCity(e.target.value)}/></div>
+            <div className="form-field"><label className="form-lbl">Timezone</label><input className="input" value={tz} onChange={e=>setTz(e.target.value)} placeholder="e.g. Europe/Amsterdam"/></div>
+            <div className="form-field">
+              <label className="form-lbl">Brief <span style={{color:'var(--text3)',fontWeight:400}}>(injected into every AI conversation)</span></label>
+              <textarea className="input" rows={7} value={brief} onChange={e=>setBrief(e.target.value)} style={{resize:'vertical',fontFamily:'var(--font)',lineHeight:1.6}} placeholder="Describe yourself — what you do, study, your background, habits, preferences the AI should know…"/>
+            </div>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              {saving?'Saving…':saved?'✓ Saved':'Save Profile'}
+            </button>
+          </div>
+        </div>
+
+        <div className="profile-card">
+          <div className="card-title">News Sources</div>
+          <div style={{fontSize:11.5,color:'var(--text3)',marginBottom:12,lineHeight:1.5}}>
+            Toggle sources on/off. Changes are saved immediately and take effect on the next Briefing load.
+          </div>
+          {countries.length===0&&<div className="no-data">No sources configured — run install.sh again to add sources.</div>}
+          {countries.map(country=>(
+            <div key={country} style={{marginBottom:14}}>
+              <div style={{fontSize:11,color:'var(--cyan)',fontFamily:'var(--mono)',letterSpacing:'1px',textTransform:'uppercase',marginBottom:6}}>{country}</div>
+              <div className="source-list">
+                {sources.filter(s=>s.country===country).map(s=>(
+                  <div key={s.id} className="source-item">
+                    <button className={`source-toggle ${s.enabled?'on':'off'}`} onClick={()=>toggleSource(s.id)}/>
+                    <span className="source-name">{s.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Models ────────────────────────────────────────────────────────
+function ModelsPage(){
+  const [models,setModels]=useState([]);const [configured,setConfigured]=useState({});
+  const [pullName,setPullName]=useState('');const [pulling,setPulling]=useState(false);const [pullStatus,setPullStatus]=useState('');
+  useEffect(()=>{api('/api/models').then(d=>{setModels(d.models||[]);setConfigured(d.configured||{});}).catch(()=>{});},[]);
+  async function pull(){if(!pullName)return;setPulling(true);setPullStatus(`Pulling ${pullName} — this may take several minutes…`);
+    try{const r=await api('/api/models/pull',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pullName})});
+      if(r.success){setPullStatus('✓ Done');setPullName('');api('/api/models').then(d=>{setModels(d.models||[]);setConfigured(d.configured||{});});}
+      else setPullStatus('Error: '+(r.error||'unknown'));
+    }catch(e){setPullStatus('Error: '+e.message);}setPulling(false);}
+  async function del(name){if(!confirm('Remove '+name+'?'))return;await api('/api/models/'+encodeURIComponent(name),{method:'DELETE'});setModels(m=>m.filter(x=>x.name!==name));}
+
+  const configuredNames=Object.values(configured);
+  return(
+    <div className="pad">
+      <div className="section-head">Model Manager</div>
+      <div className="card" style={{marginBottom:18}}>
+        <div className="card-title">Pull from Ollama library</div>
+        <div className="pull-form">
+          <input className="input" placeholder="e.g. deepseek-r1:14b" value={pullName} onChange={e=>setPullName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&pull()} style={{flex:1}}/>
+          <button className="btn btn-primary" onClick={pull} disabled={pulling||!pullName}>{pulling?<><span className="spinner" style={{width:11,height:11,marginRight:6}}/>Pulling…</>:'Pull'}</button>
+        </div>
+        <div className="pull-status">{pullStatus}</div>
+      </div>
+      <div className="card" style={{marginBottom:18}}>
+        <div className="card-title">Configured models (set in config.json)</div>
+        {Object.entries(configured).filter(([k])=>k!=='embed').map(([mode,name])=>(
+          <div key={mode} style={{display:'flex',alignItems:'center',gap:10,marginBottom:7}}>
+            <span className={`tag tag-${mode}`}>{mode.toUpperCase()}</span>
+            <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{name}</span>
+          </div>
+        ))}
+      </div>
+      <div className="model-grid">
+        {models.map(m=>(
+          <div key={m.name} className="model-card">
+            {configuredNames.includes(m.name)&&<div className="config-badge">⚙ in use</div>}
+            <div className="model-name">{m.name}</div>
+            <div className="model-meta">{fmtSize(m.size)}{m.family?' · '+m.family:''}</div>
+            <button className="btn btn-danger btn-sm" onClick={()=>del(m.name)} disabled={configuredNames.includes(m.name)}>Remove</button>
+          </div>
+        ))}
+        {models.length===0&&<div className="no-data" style={{gridColumn:'1/-1'}}>No models found — is Ollama running?</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Topbar ────────────────────────────────────────────────────────
+const PAGE_TITLES={home:'Home',chat:'Chat',news:'Briefing',convs:'History',stats:'Stats',memory:'Memory',fitness:'Fitness',remind:'Reminders',profile:'Profile',models:'Models'};
+function Topbar({page,onRefresh}){
+  const now=new Date();
+  const t=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const d=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  return(
+    <div className="topbar">
+      <span className="topbar-page">{PAGE_TITLES[page]||page}</span>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <span className="topbar-date">{d} · {t}</span>
+        <button className="btn btn-ghost btn-sm" onClick={onRefresh} style={{padding:'3px 8px'}}>↻</button>
+      </div>
+    </div>
+  );
+}
+
+// ── App root ──────────────────────────────────────────────────────
+function App(){
+  const [unlocked,setUnlocked]=useState(false);
+  const [page,setPage]=useState('chat');
+  const [key,setKey]=useState(0);
+
+  useEffect(()=>{api('/api/status').then(d=>{if(d.unlocked)setUnlocked(true);}).catch(()=>{});},[]);
+
+  async function lock(){await api('/api/lock',{method:'POST'}).catch(()=>{});setUnlocked(false);}
+  function refresh(){setKey(k=>k+1);}
+
+  if(!unlocked)return<LockScreen onUnlock={()=>setUnlocked(true)}/>;
+
+  const FULL_HEIGHT=['chat','convs'];
+  const Pages={home:HomePage,chat:ChatPage,news:NewsPage,convs:ConvsPage,stats:StatsPage,memory:MemoryPage,fitness:FitnessPage,remind:RemindersPage,profile:ProfilePage,models:ModelsPage};
+  const PageComponent=Pages[page]||HomePage;
+
+  return(
+    <div className="shell">
+      <Sidebar page={page} setPage={setPage} onLock={lock}/>
+      <div className="main">
+        <Topbar page={page} onRefresh={refresh}/>
+        <div className="page-wrap" key={`${page}-${key}`} style={{overflow:FULL_HEIGHT.includes(page)?'hidden':'auto',animation:'fadeIn .22s ease'}}>
+          <PageComponent key={`${page}-${key}`}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
