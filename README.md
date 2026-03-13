@@ -1,4 +1,4 @@
-# Jarvis — Local AI Personal Assistant
+# Jarvis — Local AI Personal Assistant (Proof of concept)
 
 A fully local, encrypted personal AI assistant with a React dashboard and terminal interface. All data is stored inside the project folder — nothing is written to system paths. No cloud, no telemetry, no API keys.
 
