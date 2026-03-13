@@ -22,13 +22,13 @@ Key properties:
 
 ## Screenshots
 
-| Lock screen | Home | Chat |
-|---|---|---|
-| ![Lock](docs/screenshots/lock.png) | ![Home](docs/screenshots/home.png) | ![Chat](docs/screenshots/chat.png) |
+| Lock screen | Home | Chat | News |
+|---|---|---|---|
+| ![Lock](docs/Lockscreen.png) | ![Home](docs/Home.png) | ![Chat](docs/Chat.png) | ![News](docs/News.png) |
 
-| Fitness | Models | Profile |
-|---|---|---|
-| ![Fitness](docs/screenshots/fitness.png) | ![Models](docs/screenshots/models.png) | ![Profile](docs/screenshots/profile.png) |
+| History | Stats | Models | Profile |
+|---|---|---|---|
+| ![History](docs/History.png) | ![Models](docs/Stats.png) | ![Models](docs/Models.png) | ![Profile](docs/Profile.png) |
 
 ---
 
