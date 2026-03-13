@@ -148,7 +148,9 @@ pick_news() {
       [[ -z "$s" ]] && continue
       IFS='|' read -r id name c url <<< "$s"
       printf "  Include %-30s? [Y/n]: " "$name"
-      read -r yn
+      
+      read -r yn </dev/tty 
+      
       if [[ "${yn,,}" != "n" ]]; then
         local escaped_url="${url//\"/\\\"}"
         ENABLED_JSON+=("{\"id\":\"${id}\",\"name\":\"${name}\",\"country\":\"${country}\",\"url\":\"${escaped_url}\",\"enabled\":true}")
