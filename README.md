@@ -305,7 +305,18 @@ Edit `config.json` and add entries to `news.sources`:
 Or use the Profile → News Sources toggle in the dashboard.
 
 ---
+## Architecture & Development
 
-## License
+The core concept, system architecture, and technology stack for Jarvis were designed by Simeon Vutov.
+The codebase was built by leveraging Claude AI as an implementation tool, acting under strict architectural
+guidance to orchestrate the local LLMs, vector database, and encryption systems.
 
-MIT
+## License & Attribution
+
+This project is released under a custom **Non-Commercial License**. 
+
+* **Non-Commercial Use Only:** You may not use, modify, or distribute this software for any commercial or profit-generating purposes.
+* **Mandatory Attribution:** If you fork, adapt, or use substantial portions of this architecture, you must explicitly credit **Simeon Vutov** as the Systems Architect and Project Creator.
+* **Freedom to Tinker:** You are free to modify and use this locally for personal or educational purposes.
+
+See the `LICENSE` file in the root directory for full details.
