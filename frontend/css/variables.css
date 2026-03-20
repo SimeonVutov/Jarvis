@@ -1,0 +1,39 @@
+:root {
+  /* Background layers — darkest to lightest */
+  --bg0: #060b14;
+  --bg1: #090f1d;
+  --bg2: #0c1423;
+  --bg3: #0f1a2e;
+  --card: #0d1829;
+
+  /* Borders */
+  --border:  #1a2d4a;
+  --border2: #243d5e;
+
+  /* Brand colours */
+  --cyan:   #00c8f0;
+  --cyan2:  #0099bb;
+  --cyan3:  #00e5ff;
+  --blue:   #3d8ef5;
+  --green:  #00c97a;
+  --yellow: #f0c040;
+  --orange: #f07830;
+  --red:    #f04060;
+  --purple: #a855f7;
+
+  /* Text */
+  --text:  #c8d8f0;
+  --text2: #8899b8;
+  --text3: #4a6080;
+
+  /* Typography */
+  --font: 'DM Sans', sans-serif;
+  --head: 'Syne', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+
+  /* Shared radius */
+  --r: 10px;
+
+  /* Transition speed */
+  --speed: 0.18s;
+}

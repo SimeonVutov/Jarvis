@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jarvis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Design tokens and base styles must come first -->
+<link rel="stylesheet" href="/css/variables.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/animations.css">
+<link rel="stylesheet" href="/css/layout.css">
+<link rel="stylesheet" href="/css/components.css">
+<link rel="stylesheet" href="/css/pages.css">
+
+<!-- CDN libraries (React, Babel, Markdown) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+
+<!-- Pure JS helpers (no Babel needed) -->
+<script src="/src/api.js"></script>
+<script src="/src/utils.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Components (order matters: primitives before composites) -->
+<script type="text/babel" src="/src/components/Spinner.jsx"></script>
+<script type="text/babel" src="/src/components/Markdown.jsx"></script>
+<script type="text/babel" src="/src/components/LockScreen.jsx"></script>
+<script type="text/babel" src="/src/components/Sidebar.jsx"></script>
+<script type="text/babel" src="/src/components/FitnessChart.jsx"></script>
+<script type="text/babel" src="/src/components/FileEditorModal.jsx"></script>
+
+<!-- Pages -->
+<script type="text/babel" src="/src/pages/HomePage.jsx"></script>
+<script type="text/babel" src="/src/pages/ChatPage.jsx"></script>
+<script type="text/babel" src="/src/pages/NewsPage.jsx"></script>
+<script type="text/babel" src="/src/pages/FitnessPage.jsx"></script>
+<script type="text/babel" src="/src/pages/StatsPage.jsx"></script>
+<script type="text/babel" src="/src/pages/MemoryPage.jsx"></script>
+<script type="text/babel" src="/src/pages/RemindersPage.jsx"></script>
+<script type="text/babel" src="/src/pages/ConversationsPage.jsx"></script>
+<script type="text/babel" src="/src/pages/ProfilePage.jsx"></script>
+<script type="text/babel" src="/src/pages/ModelsPage.jsx"></script>
+<script type="text/babel" src="/src/pages/ProjectsPage.jsx"></script>
+
+<!-- App root — last, after all components are defined -->
+<script type="text/babel" src="/src/App.jsx"></script>
+</body>
+</html>
