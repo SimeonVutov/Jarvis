@@ -373,15 +373,28 @@ ok "config.json written"
 # Launch scripts
 cat > "$SCRIPT_DIR/start-dashboard.sh" << 'SH'
 #!/usr/bin/env bash
+# Jarvis — Start the web dashboard
+set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -d "$DIR/venv" ]]; then echo "ERROR: venv not found. Run install.sh first."; exit 1; fi
+if [[ ! -f "$DIR/config.json" ]]; then echo "ERROR: config.json not found. Run install.sh first."; exit 1; fi
 source "$DIR/venv/bin/activate"
 cd "$DIR"
+echo "  Jarvis dashboard starting…"
+echo "  Open http://localhost:7777 in your browser"
+echo "  Press Ctrl+C to stop"
+echo ""
+# server.py imports from backend/ — project root must be the working directory
 python "$DIR/server.py"
 SH
 
 cat > "$SCRIPT_DIR/start-terminal.sh" << 'SH'
 #!/usr/bin/env bash
+# Jarvis — Start the terminal interface
+set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -d "$DIR/venv" ]]; then echo "ERROR: venv not found. Run install.sh first."; exit 1; fi
+if [[ ! -f "$DIR/config.json" ]]; then echo "ERROR: config.json not found. Run install.sh first."; exit 1; fi
 source "$DIR/venv/bin/activate"
 cd "$DIR"
 python "$DIR/jarvis.py"
