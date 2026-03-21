@@ -1,28 +1,51 @@
 import datetime
 from backend import state
 
+import re as _re
+
+# Keywords that require a full-word match so single letters like "c" and short
+# strings like "css" don't falsely match inside unrelated words.
 CODING_KEYWORDS = [
-    "code","coding","program","debug","function","script","python","c","c++","cpp",
-    "javascript","typescript","algorithm","compile","bug","implement","segfault","pointer",
-    "memory leak","makefile","gcc","gdb","embedded","firmware","gpio","uart","spi","i2c",
-    "bare metal","pico","raspberry","microcontroller","html","css","react","flask",
-    "fastapi","docker","bash","shell","linker","assembly",
+    "code", "coding", "program", "debug", "function", "script", "python",
+    "c++", "cpp", "javascript", "typescript", "algorithm", "compile", "bug",
+    "implement", "segfault", "pointer", "memory leak", "makefile", "gcc",
+    "gdb", "embedded", "firmware", "gpio", "uart", "spi", "i2c", "bare metal",
+    "pico", "raspberry", "microcontroller", "html", "react", "flask",
+    "fastapi", "docker", "bash", "shell", "linker", "assembly",
+    # Single-letter / short keywords that need whole-word matching
+    r"\bc\b", r"\bcss\b",
 ]
 STUDY_KEYWORDS = [
-    "study","studying","learn","course","exam","lecture","explain","concept","assignment",
-    "homework","understand","revision","operating system","scheduler","deadlock","semaphore",
-    "mutex","virtual memory","page table","tlb","file system","process","thread","cache",
-    "pipeline","digital systems","fpga","compiler","parser","lexer","network","tcp","udp",
-    "quantum","relativity","calculus","linear algebra","differential","probability",
-    "fourier","laplace","physics","math","theorem","derive","proof","algorithm design",
+    "study", "studying", "learn", "course", "exam", "lecture", "explain",
+    "concept", "assignment", "homework", "understand", "revision",
+    "operating system", "scheduler", "scheduling", "deadlock", "semaphore",
+    "mutex", "virtual memory", "page table", "tlb", "file system",
+    "pipeline", "digital systems", "fpga", "compiler", "parser", "lexer",
+    "quantum", "relativity", "calculus", "linear algebra", "differential",
+    "probability", "fourier", "laplace", "physics", "theorem",
+    "derive", "proof", "algorithm design",
+    # Whole-word matches to avoid "network" matching "networking" etc.
+    r"\bnetwork\b", r"\btcp\b", r"\budp\b", r"\bmath\b",
+    r"\bprocess\b", r"\bthread\b", r"\bcache\b",
 ]
+
+# Keywords that start with r"\" are treated as regex patterns;
+# all others are simple substring matches.
+def _matches(keywords: list[str], text: str) -> bool:
+    for kw in keywords:
+        if kw.startswith(r"\b"):
+            if _re.search(kw, text):
+                return True
+        elif kw in text:
+            return True
+    return False
 
 
 def detect_mode(text: str, current: str = "general") -> str:
     lower = text.lower()
-    if any(kw in lower for kw in CODING_KEYWORDS):
+    if _matches(CODING_KEYWORDS, lower):
         return "coding"
-    if any(kw in lower for kw in STUDY_KEYWORDS):
+    if _matches(STUDY_KEYWORDS, lower):
         return "study"
     return current
 
