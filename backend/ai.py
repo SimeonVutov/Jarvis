@@ -33,6 +33,7 @@ def build_system_prompt(
     search_context: str,
     upcoming_reminders: list[dict],
     user: dict,
+    projects: list[dict] | None = None,
 ) -> str:
     now   = datetime.datetime.now()
     name  = user.get("name", "User")
@@ -74,11 +75,34 @@ def build_system_prompt(
         ),
     }
 
+    projects_block = ""
+    if projects:
+        projects_block = "\n[PROJECTS — the user's saved projects and files]\n"
+        for proj in projects:
+            projects_block += f"Project: {proj['name']}"
+            if proj.get("description"):
+                projects_block += f" — {proj['description']}"
+            projects_block += "\n"
+            for f in proj.get("files", []):
+                projects_block += f"  File: {f['filename']}\n"
+                if f.get("content"):
+                    # Include up to 3000 chars per file so context stays manageable
+                    snippet = f["content"][:3000]
+                    if len(f["content"]) > 3000:
+                        snippet += "\n… [truncated]"
+                    projects_block += f"  Content:\n{snippet}\n"
+        projects_block += (
+            "\nWhen the user references a project or file by name, use the content above. "
+            "You can read, explain, or modify any file shown. "
+            "Be specific — quote exact lines when relevant.\n"
+        )
+
     return (
         ground_truth
         + "\n"
         + mode_instructions.get(mode, mode_instructions["general"])
         + memory_block
+        + projects_block
         + (f"\n\n{search_context}" if search_context else "")
     )
 
