@@ -224,7 +224,10 @@ def build_app_contexts(
             result = fn(con, user)
             if result:
                 parts.append(result)
-        except Exception:
-            pass  # never let a broken app context crash the chat
+        except Exception as _ctx_err:
+            import logging
+            logging.getLogger(__name__).error(
+                "app_context builder '%s' failed: %s", app.context_fn, _ctx_err, exc_info=True
+            )
 
     return "\n\n".join(parts)

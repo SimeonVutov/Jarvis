@@ -137,3 +137,27 @@ async def chat(body: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/api/debug/system-prompt")
+async def debug_system_prompt():
+    """DEV ONLY — returns the exact system prompt that would be built for the next chat."""
+    _require_auth()
+    import traceback
+    con = get_connection()
+    try:
+        cfg          = load_config()
+        user         = cfg["user"]
+        enabled_ids  = _get_enabled_app_ids(cfg)
+        try:
+            app_context = build_app_contexts(enabled_ids, con, user)
+        except Exception as e:
+            app_context = f"ERROR building app_context: {traceback.format_exc()}"
+        system = build_system_prompt("general", [], "", app_context, user)
+        return {
+            "enabled_ids":   list(enabled_ids),
+            "app_context":   app_context,
+            "system_prompt": system,
+        }
+    finally:
+        con.close()
