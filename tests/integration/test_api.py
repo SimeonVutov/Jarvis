@@ -109,10 +109,13 @@ class TestReminders:
 
 class TestFitness:
     def test_log_and_retrieve_fitness(self, auth_client):
-        resp = auth_client.post("/api/fitness", json={"date": "2026-01-15", "calories": 2100, "weight": 75.5, "workout": "chest"})
+        import datetime
+        # Use today so the entry always falls within the default 30-day window
+        today = datetime.date.today().isoformat()
+        resp = auth_client.post("/api/fitness", json={"date": today, "calories": 2100, "weight": 75.5, "workout": "chest"})
         assert resp.status_code == 200
         entries = auth_client.get("/api/fitness?period=month").json()
-        entry   = next((e for e in entries if e["date"] == "2026-01-15"), None)
+        entry   = next((e for e in entries if e["date"] == today), None)
         assert entry is not None
         assert entry["calories"] == 2100
         assert entry["weight"]   == 75.5

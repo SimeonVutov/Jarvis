@@ -1,4 +1,5 @@
 from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +15,22 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Jarvis", docs_url=None)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        from backend.config import load_config, get_data_dir
+        from backend.database import get_connection, ensure_tables
+        cfg = load_config()
+        get_data_dir().mkdir(parents=True, exist_ok=True)
+        db  = get_data_dir() / "jarvis.db"
+        if db.exists():
+            con = get_connection()
+            ensure_tables(con)
+            con.close()
+        srv = cfg.get("server", {})
+        print(f"✓ Jarvis  http://{srv.get('host','127.0.0.1')}:{srv.get('port',7777)}")
+        yield  # application runs here
+
+    app = FastAPI(title="Jarvis", docs_url=None, lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -43,19 +59,5 @@ def create_app() -> FastAPI:
         if index.exists():
             return FileResponse(str(index))
         return HTMLResponse("<h1>frontend/index.html not found</h1>")
-
-    @app.on_event("startup")
-    async def on_startup():
-        from backend.config import load_config, get_data_dir
-        from backend.database import get_connection, ensure_tables
-        cfg = load_config()
-        get_data_dir().mkdir(parents=True, exist_ok=True)
-        db  = get_data_dir() / "jarvis.db"
-        if db.exists():
-            con = get_connection()
-            ensure_tables(con)
-            con.close()
-        srv = cfg.get("server", {})
-        print(f"✓ Jarvis  http://{srv.get('host','127.0.0.1')}:{srv.get('port',7777)}")
 
     return app

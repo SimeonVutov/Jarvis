@@ -1,28 +1,51 @@
 import datetime
 from backend import state
 
+import re as _re
+
+# Keywords that require a full-word match so single letters like "c" and short
+# strings like "css" don't falsely match inside unrelated words.
 CODING_KEYWORDS = [
-    "code","coding","program","debug","function","script","python","c","c++","cpp",
-    "javascript","typescript","algorithm","compile","bug","implement","segfault","pointer",
-    "memory leak","makefile","gcc","gdb","embedded","firmware","gpio","uart","spi","i2c",
-    "bare metal","pico","raspberry","microcontroller","html","css","react","flask",
-    "fastapi","docker","bash","shell","linker","assembly",
+    "code", "coding", "program", "debug", "function", "script", "python",
+    "c++", "cpp", "javascript", "typescript", "algorithm", "compile", "bug",
+    "implement", "segfault", "pointer", "memory leak", "makefile", "gcc",
+    "gdb", "embedded", "firmware", "gpio", "uart", "spi", "i2c", "bare metal",
+    "pico", "raspberry", "microcontroller", "html", "react", "flask",
+    "fastapi", "docker", "bash", "shell", "linker", "assembly",
+    # Single-letter / short keywords that need whole-word matching
+    r"\bc\b", r"\bcss\b",
 ]
 STUDY_KEYWORDS = [
-    "study","studying","learn","course","exam","lecture","explain","concept","assignment",
-    "homework","understand","revision","operating system","scheduler","deadlock","semaphore",
-    "mutex","virtual memory","page table","tlb","file system","process","thread","cache",
-    "pipeline","digital systems","fpga","compiler","parser","lexer","network","tcp","udp",
-    "quantum","relativity","calculus","linear algebra","differential","probability",
-    "fourier","laplace","physics","math","theorem","derive","proof","algorithm design",
+    "study", "studying", "learn", "course", "exam", "lecture", "explain",
+    "concept", "assignment", "homework", "understand", "revision",
+    "operating system", "scheduler", "scheduling", "deadlock", "semaphore",
+    "mutex", "virtual memory", "page table", "tlb", "file system",
+    "pipeline", "digital systems", "fpga", "compiler", "parser", "lexer",
+    "quantum", "relativity", "calculus", "linear algebra", "differential",
+    "probability", "fourier", "laplace", "physics", "theorem",
+    "derive", "proof", "algorithm design",
+    # Whole-word matches to avoid "network" matching "networking" etc.
+    r"\bnetwork\b", r"\btcp\b", r"\budp\b", r"\bmath\b",
+    r"\bprocess\b", r"\bthread\b", r"\bcache\b",
 ]
+
+# Keywords that start with r"\" are treated as regex patterns;
+# all others are simple substring matches.
+def _matches(keywords: list[str], text: str) -> bool:
+    for kw in keywords:
+        if kw.startswith(r"\b"):
+            if _re.search(kw, text):
+                return True
+        elif kw in text:
+            return True
+    return False
 
 
 def detect_mode(text: str, current: str = "general") -> str:
     lower = text.lower()
-    if any(kw in lower for kw in CODING_KEYWORDS):
+    if _matches(CODING_KEYWORDS, lower):
         return "coding"
-    if any(kw in lower for kw in STUDY_KEYWORDS):
+    if _matches(STUDY_KEYWORDS, lower):
         return "study"
     return current
 
@@ -33,6 +56,7 @@ def build_system_prompt(
     search_context: str,
     upcoming_reminders: list[dict],
     user: dict,
+    projects: list[dict] | None = None,
 ) -> str:
     now   = datetime.datetime.now()
     name  = user.get("name", "User")
@@ -74,11 +98,34 @@ def build_system_prompt(
         ),
     }
 
+    projects_block = ""
+    if projects:
+        projects_block = "\n[PROJECTS — the user's saved projects and files]\n"
+        for proj in projects:
+            projects_block += f"Project: {proj['name']}"
+            if proj.get("description"):
+                projects_block += f" — {proj['description']}"
+            projects_block += "\n"
+            for f in proj.get("files", []):
+                projects_block += f"  File: {f['filename']}\n"
+                if f.get("content"):
+                    # Include up to 3000 chars per file so context stays manageable
+                    snippet = f["content"][:3000]
+                    if len(f["content"]) > 3000:
+                        snippet += "\n… [truncated]"
+                    projects_block += f"  Content:\n{snippet}\n"
+        projects_block += (
+            "\nWhen the user references a project or file by name, use the content above. "
+            "You can read, explain, or modify any file shown. "
+            "Be specific — quote exact lines when relevant.\n"
+        )
+
     return (
         ground_truth
         + "\n"
         + mode_instructions.get(mode, mode_instructions["general"])
         + memory_block
+        + projects_block
         + (f"\n\n{search_context}" if search_context else "")
     )
 

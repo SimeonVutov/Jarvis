@@ -15,10 +15,12 @@ class TestModeDetection:
         assert detect_mode("makefile for embedded project")    == "coding"
 
     def test_study_keywords_trigger_study_mode(self):
-        assert detect_mode("explain virtual memory")           == "study"
-        assert detect_mode("I have an exam on OS scheduling")  == "study"
-        assert detect_mode("derive the fourier transform")     == "study"
-        assert detect_mode("how does the page table work")     == "study"
+        assert detect_mode("explain virtual memory")              == "study"
+        assert detect_mode("I have an exam on OS scheduling")     == "study"
+        assert detect_mode("derive the fourier transform")        == "study"
+        assert detect_mode("how does the page table work")        == "study"
+        assert detect_mode("studying linear algebra tonight")     == "study"
+        assert detect_mode("explain the deadlock problem")        == "study"
 
     def test_general_message_keeps_current_mode(self):
         assert detect_mode("good morning",     "general") == "general"
