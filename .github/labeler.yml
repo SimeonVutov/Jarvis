@@ -1,0 +1,33 @@
+backend:
+  - changed-files:
+    - any-glob-to-any-file: "backend/**"
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file: "frontend/**"
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file: "tests/**"
+
+installer:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "install.sh"
+      - "uninstall.sh"
+      - "reset.sh"
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: "requirements.txt"
+
+config:
+  - changed-files:
+    - any-glob-to-any-file: "config*.json"
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "README.md"
+      - "docs/**"
+      - "*.md"

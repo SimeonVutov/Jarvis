@@ -1,0 +1,59 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  api:
+    name: API integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Write test config
+        run: |
+          mkdir -p test_data
+          cat > config.json << 'EOF'
+          {
+            "models": {
+              "study":   "mock-model",
+              "coding":  "mock-model",
+              "general": "mock-model",
+              "embed":   "mock-model"
+            },
+            "user": {
+              "name":     "IntegrationTestUser",
+              "brief":    "Running integration tests.",
+              "city":     "Amsterdam",
+              "timezone": "Europe/Amsterdam"
+            },
+            "news":   { "sources": [] },
+            "server": { "host": "127.0.0.1", "port": 17777 },
+            "data_dir": "test_data"
+          }
+          EOF
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v --timeout=30
+        env:
+          JARVIS_TEST_MODE: "1"
+
+      - name: Clean up
+        if: always()
+        run: rm -rf test_data config.json

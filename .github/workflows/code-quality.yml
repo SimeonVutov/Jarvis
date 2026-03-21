@@ -1,0 +1,157 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  python-syntax:
+    name: Python syntax check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check all Python files parse cleanly
+        run: |
+          python3 << 'EOF'
+          import ast, pathlib, sys
+
+          files  = list(pathlib.Path("backend").rglob("*.py")) + [pathlib.Path("server.py"), pathlib.Path("jarvis.py")]
+          errors = []
+
+          for f in files:
+              try:
+                  ast.parse(f.read_text())
+                  print(f"  OK  {f}")
+              except SyntaxError as e:
+                  errors.append(f"  ERR {f}: line {e.lineno} — {e.msg}")
+
+          if errors:
+              print("\nSyntax errors found:")
+              for e in errors: print(e)
+              sys.exit(1)
+
+          print(f"\n{len(files)} files — all OK")
+          EOF
+
+  ruff:
+    name: Ruff linter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: |
+          ruff check backend/ server.py jarvis.py \
+            --select E,W,F \
+            --ignore E501,W503,F401 \
+            --output-format github
+
+  security:
+    name: Security scan (Bandit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit
+        run: |
+          bandit -r backend/ server.py \
+            --severity-level medium \
+            --confidence-level medium \
+            --skip B101,B311 \
+            -f txt
+
+  structure:
+    name: Verify project structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check required files and directories exist
+        run: |
+          python3 << 'EOF'
+          import pathlib, sys
+
+          required = [
+            # Backend modules
+            "backend/__init__.py",
+            "backend/state.py",
+            "backend/config.py",
+            "backend/crypto.py",
+            "backend/database.py",
+            "backend/memory.py",
+            "backend/ai.py",
+            "backend/downloader.py",
+            "backend/schemas.py",
+            "backend/app.py",
+            # Routes
+            "backend/routes/__init__.py",
+            "backend/routes/auth.py",
+            "backend/routes/chat.py",
+            "backend/routes/dashboard.py",
+            "backend/routes/fitness.py",
+            "backend/routes/models.py",
+            "backend/routes/news.py",
+            "backend/routes/profile.py",
+            "backend/routes/projects.py",
+            "backend/routes/reminders.py",
+            "backend/routes/stats.py",
+            # Frontend
+            "frontend/index.html",
+            "frontend/css/variables.css",
+            "frontend/css/base.css",
+            "frontend/css/animations.css",
+            "frontend/css/layout.css",
+            "frontend/css/components.css",
+            "frontend/css/pages.css",
+            "frontend/src/api.js",
+            "frontend/src/utils.js",
+            "frontend/src/App.jsx",
+            # Root
+            "server.py",
+            "jarvis.py",
+            "requirements.txt",
+            "install.sh",
+            "uninstall.sh",
+          ]
+
+          missing = [f for f in required if not pathlib.Path(f).exists()]
+
+          if missing:
+              print("Missing required files:")
+              for f in missing: print(f"  ✗  {f}")
+              sys.exit(1)
+
+          print(f"All {len(required)} required files present")
+          EOF

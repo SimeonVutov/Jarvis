@@ -1,0 +1,71 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - "tests/**"
+      - "requirements.txt"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - "tests/**"
+      - "requirements.txt"
+
+jobs:
+  test:
+    name: Run backend unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Create minimal config.json for tests
+        run: |
+          cat > config.json << 'EOF'
+          {
+            "models": {
+              "study":   "deepseek-r1:7b",
+              "coding":  "qwen2.5-coder:7b",
+              "general": "llama3.1:8b",
+              "embed":   "nomic-embed-text"
+            },
+            "user": {
+              "name":     "TestUser",
+              "brief":    "A test user.",
+              "city":     "Amsterdam",
+              "timezone": "Europe/Amsterdam"
+            },
+            "news":   { "sources": [] },
+            "server": { "host": "127.0.0.1", "port": 7777 },
+            "data_dir": "test_data"
+          }
+          EOF
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=backend --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+      - name: Clean up test data
+        if: always()
+        run: rm -rf test_data config.json
