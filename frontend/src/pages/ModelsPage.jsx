@@ -24,9 +24,18 @@ function ModelsPage({ pulls, setPulls }) {
   }
 
   async function startDownload(name) {
-    if (!name.trim()) return;
-    await jsonPost("/api/models/pull", { name: name.trim() }).catch(e => alert("Error: " + e.message));
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      await jsonPost("/api/models/pull", { name: trimmed });
+      // Fetch updated pull registry and push to App, which also restarts polling
+      const all = await api("/api/models/pull/all");
+      setPulls(() => all);
+    } catch (e) {
+      alert("Could not start download: " + e.message);
+    }
     setPullInput("");
+    setSearchQ("");
   }
 
   async function pauseDownload(name) {
