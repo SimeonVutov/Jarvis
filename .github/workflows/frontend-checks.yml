@@ -32,7 +32,7 @@ jobs:
           echo "Checking JS files..."
           for f in frontend/src/api.js frontend/src/utils.js; do
             echo "  → $f"
-            acorn --ecma2020 --module "$f" > /dev/null
+            acorn --ecma2021 --module "$f" > /dev/null
           done
           echo "All JS files OK"
 
