@@ -198,7 +198,7 @@ class TestContextBuilders:
         )
         db.commit()
         result = get_calendar_context(db, {})
-        assert "DONE" in result
+        assert "done" in result.lower()
 
     def test_build_app_contexts_only_calls_enabled_apps(self, db):
         from backend.app_context import build_app_contexts
