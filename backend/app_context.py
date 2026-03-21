@@ -163,8 +163,8 @@ def get_calendar_context(con: sqlite3.Connection, user: dict) -> str:
         lines.append("TASKS (today and upcoming):")
         for t in upcoming:
             status = "✓ done" if t["done"] else "not done"
-            group  = f" [{groups[t['group_id']]}]" if t.get("group_id") and t["group_id"] in groups else ""
-            time   = f" {t['start_time']}" if t.get("start_time") else ""
+            group  = f" [{groups[t['group_id']]}]" if t["group_id"] and t["group_id"] in groups else ""
+            time   = f" {t['start_time']}" if t["start_time"] else ""
             lines.append(f"  • [{t['level'].upper()}]{time} {safe_decrypt(t['title'])} — {t['date']} — {status}{group}")
 
     # Past tasks (for reference, show done status)
@@ -178,9 +178,9 @@ def get_calendar_context(con: sqlite3.Connection, user: dict) -> str:
     if events:
         lines.append("EVENTS:")
         for e in events:
-            start_t = f" {e['start_time']}" if e.get("start_time") else ""
-            end_t   = f"–{e['end_time']}" if e.get("end_time") else ""
-            cross   = f" (ends {e['end_date']})" if e.get("end_date") and e["end_date"] != e["start_date"] else ""
+            start_t = f" {e['start_time']}" if e["start_time"] else ""
+            end_t   = f"–{e['end_time']}" if e["end_time"] else ""
+            cross   = f" (ends {e['end_date']})" if e["end_date"] and e["end_date"] != e["start_date"] else ""
             lines.append(f"  • [{e['level'].upper()}]{start_t}{end_t} {safe_decrypt(e['title'])} — {e['start_date']}{cross}")
 
     return "\n".join(lines)
