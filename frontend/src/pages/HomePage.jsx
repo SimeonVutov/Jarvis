@@ -1,6 +1,6 @@
 const { useState, useEffect } = React;
 
-function HomePage() {
+function HomePage({ enabledApps }) {
   const [dashData,     setDashData]     = useState(null);
   const [weather,      setWeather]      = useState(null);
   const [greeting,     setGreeting]     = useState("");
@@ -32,13 +32,19 @@ function HomePage() {
   const fy = fitness?.yesterday;
 
   // Build summary chips from available data
+  const fitnessEnabled   = !enabledApps || enabledApps.has("fitness");
+  const remindersEnabled = !enabledApps || enabledApps.has("remind");
+  const newsEnabled      = !enabledApps || enabledApps.has("news");
+
   const chips = [];
   if (weather && !weather.error)
     chips.push({ icon: weatherIcon(weather.desc), text: `${weather.temp_c}° · ${weather.desc}` });
-  if (ft?.workout)       chips.push({ icon: "🏋️", text: ft.workout });
-  else if (fy?.workout)  chips.push({ icon: "🏋️", text: `Yesterday: ${fy.workout}` });
-  if (ft?.calories)      chips.push({ icon: "🔥", text: `${ft.calories} kcal` });
-  if (reminders.length > 0) {
+  if (fitnessEnabled) {
+    if (ft?.workout)      chips.push({ icon: "🏋️", text: ft.workout });
+    else if (fy?.workout) chips.push({ icon: "🏋️", text: `Yesterday: ${fy.workout}` });
+    if (ft?.calories)     chips.push({ icon: "🔥", text: `${ft.calories} kcal` });
+  }
+  if (remindersEnabled && reminders.length > 0) {
     const r = reminders[0];
     const d = daysUntil(r.due_date);
     chips.push({ icon: "📅", text: `${d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d}d`}: ${r.title}` });
@@ -97,8 +103,8 @@ function HomePage() {
           )}
         </div>
 
-        {/* Reminders */}
-        <div className="card">
+        {/* Reminders — only if app enabled */}
+        {remindersEnabled && <div className="card">
           <div className="card-title">Upcoming</div>
           {reminders.length === 0 && <div className="no-data">No upcoming reminders</div>}
           {reminders.map(r => {
@@ -113,10 +119,10 @@ function HomePage() {
               </div>
             );
           })}
-        </div>
+        </div>}
 
-        {/* Top news */}
-        <div className="card">
+        {/* Top news — only if app enabled */}
+        {newsEnabled && <div className="card">
           <div className="card-title">Top stories</div>
           {newsSnippets.length === 0 && <div className="no-data">No news sources configured</div>}
           {newsSnippets.map((n, i) => (
@@ -128,7 +134,7 @@ function HomePage() {
               </a>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );
