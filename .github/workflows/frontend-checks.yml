@@ -114,9 +114,12 @@ jobs:
           console.log(`\nAll CSS files OK`);
           EOF
 
+      - name: Install BeautifulSoup for HTML check
+        run: pip install beautifulsoup4
+
       - name: Verify index.html loads all components in correct order
         run: |
-          python3 << 'EOF'
+          python3 << 'PYEOF'
           from bs4 import BeautifulSoup
           import sys, re
 
@@ -148,10 +151,6 @@ jobs:
               for e in errors: print(f"ERROR: {e}")
               sys.exit(1)
           print(f"index.html OK — {len(styles)} CSS files, {len(scripts)} scripts")
-          EOF
+          PYEOF
         env:
           PYTHONPATH: .
-
-      - name: Install BeautifulSoup for HTML check
-        run: pip install beautifulsoup4
-        if: always()
