@@ -246,7 +246,8 @@ function CalendarPage() {
     loadMonth(); setModal(null);
   }
   async function saveEvent(id,data){
-    const payload={...data,level:data.priority||data.level||"low"};
+    // Backend expects start_date not date; map priority→level
+    const payload={...data,start_date:data.start_date||data.date,level:data.priority||data.level||"low"};
     if(id)await jsonPut(`/api/calendar/events/${id}`,payload);
     else  await jsonPost("/api/calendar/events",payload);
     loadMonth(); setModal(null);
