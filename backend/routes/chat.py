@@ -65,9 +65,10 @@ async def chat(body: ChatRequest):
                 None, partial(recall_memories, con, body.message, 6, allowed_tags)
             )
 
-            # Build context blocks from each enabled app
+            # Build context blocks from each enabled app.
+            # build_app_contexts opens its own DB connection — safe across threads.
             app_context = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: build_app_contexts(enabled_ids, con, user)
+                None, lambda: build_app_contexts(enabled_ids, None, user)
             )
 
             system   = build_system_prompt(mode, memories, search_context, app_context, user)

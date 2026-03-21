@@ -200,34 +200,39 @@ CONTEXT_BUILDERS: dict[str, callable] = {
 
 def build_app_contexts(
     enabled_app_ids: set[str],
-    con: sqlite3.Connection,
+    _unused_con,          # kept for API compatibility — ignored; we open our own connection
     user: dict,
 ) -> str:
     """
     Calls every enabled app's context builder and joins the results.
-    Returns a single string ready to append to the system prompt.
+    Opens its own SQLite connection so it is safe to call from any thread
+    (including asyncio thread-pool executors).
     """
     from backend.app_registry import REGISTRY
+    from backend.database import get_connection
 
-    parts = []
-    for app in REGISTRY:
-        if app.core:
-            continue
-        if app.id not in enabled_app_ids:
-            continue
-        if not app.context_fn:
-            continue
-        fn = CONTEXT_BUILDERS.get(app.context_fn)
-        if not fn:
-            continue
-        try:
-            result = fn(con, user)
-            if result:
-                parts.append(result)
-        except Exception as _ctx_err:
-            import logging
-            logging.getLogger(__name__).error(
-                "app_context builder '%s' failed: %s", app.context_fn, _ctx_err, exc_info=True
-            )
-
-    return "\n\n".join(parts)
+    con = get_connection()
+    try:
+        parts = []
+        for app in REGISTRY:
+            if app.core:
+                continue
+            if app.id not in enabled_app_ids:
+                continue
+            if not app.context_fn:
+                continue
+            fn = CONTEXT_BUILDERS.get(app.context_fn)
+            if not fn:
+                continue
+            try:
+                result = fn(con, user)
+                if result:
+                    parts.append(result)
+            except Exception as _ctx_err:
+                import logging
+                logging.getLogger(__name__).error(
+                    "app_context builder '%s' failed: %s", app.context_fn, _ctx_err, exc_info=True
+                )
+        return "\n\n".join(parts)
+    finally:
+        con.close()
