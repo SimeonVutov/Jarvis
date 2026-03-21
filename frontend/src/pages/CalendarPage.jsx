@@ -225,23 +225,30 @@ function CalendarPage() {
   useEffect(()=>{if(tlRef.current)tlRef.current.scrollTop=7*HOUR_H;},[sel]);
 
   async function loadMonth(){
-    const[t,e]=await Promise.all([
-      api(`/api/calendar/tasks?year=${year}&month=${month+1}`).catch(()=>[]),
-      api(`/api/calendar/events?year=${year}&month=${month+1}`).catch(()=>[]),
-    ]);
-    setTasks(t); setEvents(e);
+    const data=await api(`/api/calendar/month?year=${year}&month=${month+1}`).catch(()=>({}));
+    // Flatten the {dateStr:{tasks,events}} dict → two flat arrays with date injected
+    // Backend uses "level" field; frontend uses "priority" — map here
+    const allTasks=[], allEvents=[];
+    Object.entries(data).forEach(([dateStr,{tasks=[],events=[]}])=>{
+      tasks.forEach(t=>allTasks.push({...t,date:dateStr,priority:t.level||t.priority||"low"}));
+      events.forEach(e=>allEvents.push({...e,date:e.start_date||dateStr,priority:e.level||e.priority||"low"}));
+    });
+    setTasks(allTasks); setEvents(allEvents);
   }
   async function loadGroups(){setGroups(await api("/api/calendar/groups").catch(()=>[])); }
   async function loadCfg(){const s=await api("/api/calendar/settings").catch(()=>null);if(s)setCalCfg(s);}
 
   async function saveTask(id,data){
-    if(id)await jsonPut(`/api/calendar/tasks/${id}`,data);
-    else  await jsonPost("/api/calendar/tasks",data);
+    // Map frontend "priority" → backend "level"
+    const payload={...data,level:data.priority||data.level||"low"};
+    if(id)await jsonPut(`/api/calendar/tasks/${id}`,payload);
+    else  await jsonPost("/api/calendar/tasks",payload);
     loadMonth(); setModal(null);
   }
   async function saveEvent(id,data){
-    if(id)await jsonPut(`/api/calendar/events/${id}`,data);
-    else  await jsonPost("/api/calendar/events",data);
+    const payload={...data,level:data.priority||data.level||"low"};
+    if(id)await jsonPut(`/api/calendar/events/${id}`,payload);
+    else  await jsonPost("/api/calendar/events",payload);
     loadMonth(); setModal(null);
   }
   async function delTask(id){if(!confirm("Delete task?"))return;await httpDel(`/api/calendar/tasks/${id}`);loadMonth();}

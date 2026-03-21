@@ -36,7 +36,7 @@ function App() {
       setEnabledApps(new Set(apps.filter(a => a.enabled).map(a => a.nav_id)));
     } catch {
       // fallback: show all pages
-      setEnabledApps(new Set(["home","chat","news","convs","stats","memory","fitness","remind","projects","journal","profile","models","settings"]));
+      setEnabledApps(new Set(["home","chat","news","convs","stats","memory","fitness","remind","calendar","projects","journal","profile","models","settings"]));
     }
   }
 
