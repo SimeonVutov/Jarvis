@@ -64,7 +64,7 @@ def _get_settings(con) -> dict:
     result = dict(DEFAULT_SETTINGS)
     for r in rows:
         result[r["key"]] = r["value"]
-    return {k: int(v) for k, v in result.items()}
+    return {k: int(str(v).strip("'\"")) for k, v in result.items()}
 
 
 def _decode_task(row) -> dict:
@@ -323,10 +323,10 @@ async def update_settings(body: SettingsUpdate):
     con = get_connection()
     if body.context_days_before is not None:
         con.execute("INSERT OR REPLACE INTO calendar_settings(key,value) VALUES(?,?)",
-                    ("context_days_before", str(body.context_days_before)))
+                    ("context_days_before", str(int(body.context_days_before))))
     if body.context_days_ahead is not None:
         con.execute("INSERT OR REPLACE INTO calendar_settings(key,value) VALUES(?,?)",
-                    ("context_days_ahead", str(body.context_days_ahead)))
+                    ("context_days_ahead", str(int(body.context_days_ahead))))
     con.commit()
     settings = _get_settings(con)
     con.close()

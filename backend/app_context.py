@@ -123,7 +123,7 @@ def get_calendar_context(con: sqlite3.Connection, user: dict) -> str:
     rows        = con.execute("SELECT key, value FROM calendar_settings").fetchall()
     cfg         = {"context_days_before": 7, "context_days_ahead": 30}
     for r in rows:
-        cfg[r["key"]] = int(r["value"])
+        cfg[r["key"]] = int(str(r["value"]).strip("'\"" ))
     days_before = cfg.get("context_days_before", 7)
     days_ahead  = cfg.get("context_days_ahead",  30)
 
