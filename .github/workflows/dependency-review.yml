@@ -9,6 +9,9 @@ on:
     paths:
       - "requirements.txt"
 
+permissions:
+  contents: read
+
 jobs:
   review:
     name: Check for vulnerable dependencies
