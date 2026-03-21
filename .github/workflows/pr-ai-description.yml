@@ -1,16 +1,12 @@
 name: AI PR Description
 
-# Runs on every PR opened or updated, against any branch.
-# Uses Claude to rewrite the PR description professionally based on
-# the commit messages, changed files, and the current description.
-# Requires ANTHROPIC_API_KEY in repository secrets.
 on:
   pull_request:
     types: [opened, synchronize]
 
 jobs:
   rewrite:
-    name: Rewrite PR description with AI
+    name: Rewrite PR description with Copilot
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -19,207 +15,86 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: "20"
 
-      - name: Gather PR context
-        id: context
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request;
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
 
-            // Commit messages in this PR
-            const { data: commits } = await github.rest.pulls.listCommits({
-              owner:       context.repo.owner,
-              repo:        context.repo.repo,
-              pull_number: pr.number,
-              per_page:    50,
-            });
-            const commitMessages = commits
-              .map(c => `- ${c.commit.message.split("\n")[0]}`)
-              .join("\n");
-
-            // Changed files
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner:       context.repo.owner,
-              repo:        context.repo.repo,
-              pull_number: pr.number,
-              per_page:    100,
-            });
-            const changedFiles = files.map(f =>
-              `${f.status.padEnd(9)} +${f.additions}/-${f.deletions}  ${f.filename}`
-            ).join("\n");
-
-            // Compact patch — first 6000 chars of the full diff so Claude
-            // can understand what actually changed without hitting token limits
-            const patch = files
-              .filter(f => f.patch)
-              .map(f => `### ${f.filename}\n${f.patch}`)
-              .join("\n\n")
-              .substring(0, 6000);
-
-            core.setOutput("pr_title",       pr.title);
-            core.setOutput("pr_body",        pr.body || "");
-            core.setOutput("base_branch",    pr.base.ref);
-            core.setOutput("head_branch",    pr.head.ref);
-            core.setOutput("commit_messages", commitMessages);
-            core.setOutput("changed_files",  changedFiles);
-            core.setOutput("patch",          patch);
-            core.setOutput("pr_number",      pr.number.toString());
-
-      - name: Call Claude API to rewrite description
-        id: ai
+      - name: Build prompt and generate description
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+          GH_TOKEN:             ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:            ${{ github.event.pull_request.number }}
         run: |
-          python3 << 'PYEOF'
-          import os, json, urllib.request, urllib.error, sys
-
-          api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-          if not api_key:
-              print("ANTHROPIC_API_KEY not set — skipping AI rewrite")
-              # Write a placeholder so the next step does nothing
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write("description=SKIP\n")
-              sys.exit(0)
-
-          pr_title        = os.environ.get("PR_TITLE", "")
-          pr_body         = os.environ.get("PR_BODY", "")
-          base_branch     = os.environ.get("BASE_BRANCH", "")
-          head_branch     = os.environ.get("HEAD_BRANCH", "")
-          commit_messages = os.environ.get("COMMIT_MESSAGES", "")
-          changed_files   = os.environ.get("CHANGED_FILES", "")
-          patch           = os.environ.get("PATCH", "")
-
-          project_context = """
-          Jarvis is a fully local, encrypted personal AI assistant built with:
-          - Backend: Python, FastAPI, SQLite, ChromaDB, Ollama (local LLMs)
-          - Frontend: React 18 (no build step, CDN Babel), modular CSS + JSX files
-          - Encryption: AES-256-GCM with PBKDF2-SHA256 (600k iterations)
-          - Features: chat with local AI models, fitness tracking, reminders, news briefing,
-            project file storage, background model downloads, stop-generation button,
-            SVG line charts, model assignment UI
-
-          Branch strategy:
-          - main = stable releases only
-          - develop = integration branch, may be unstable
-          - feature/* and fix/* = individual branches merged into develop
-          """
-
-          prompt = f"""You are a technical writer for a software project. Your job is to rewrite
-          a GitHub Pull Request description to be professional, clear, and useful to reviewers.
+          cat << 'EOF' > prompt.txt
+          You are a technical writer reviewing a Pull Request for Jarvis.
 
           PROJECT CONTEXT:
-          {project_context}
+          Jarvis is a fully local, encrypted personal AI assistant:
+          - Backend: Python, FastAPI, SQLite, ChromaDB, Ollama (local LLMs)
+          - Frontend: React 18 (no build step, CDN Babel), modular CSS + JSX files
+          - Encryption: AES-256-GCM, PBKDF2-SHA256 600k iterations, all data local
+          - Features: streaming AI chat, fitness tracking, reminders, news briefing,
+            project file storage, background model downloads, stop-generation, SVG charts
+          - Branch strategy: main = stable, develop = integration, feature/* fix/* = work branches
 
-          PR TITLE: {pr_title}
-          FROM BRANCH: {head_branch}
-          INTO BRANCH: {base_branch}
+          Current PR description:
+          """
+          EOF
 
-          CURRENT PR DESCRIPTION (written by developer, may be rough or empty):
-          {pr_body or "(no description provided)"}
+          gh pr view $PR_NUMBER --json body -q .body >> prompt.txt
 
-          COMMIT MESSAGES:
-          {commit_messages}
+          echo -e '\n"""\nCommit messages:\n"""' >> prompt.txt
+          gh pr view $PR_NUMBER --json commits --jq '.commits[-30:] | .[] | "- \(.messageHeadline)"' >> prompt.txt
 
-          CHANGED FILES:
-          {changed_files}
+          echo -e '\n"""\nChanged files:\n"""' >> prompt.txt
+          gh pr diff $PR_NUMBER --name-only >> prompt.txt
 
-          CODE DIFF (truncated):
-          {patch}
+          echo -e '\n"""\nCode changes (truncated):\n"""' >> prompt.txt
+          gh pr diff $PR_NUMBER -- . ':(exclude)*.lock' ':(exclude)*-lock.json' | head -n 500 >> prompt.txt
 
-          INSTRUCTIONS:
-          Write a professional PR description in Markdown. Structure it as:
-
-          ## Summary
-          1-3 sentences explaining what this PR does and why.
-
-          ## What changed
-          A clear list of the changes made, grouped logically. Be specific about what was
-          modified, added, or removed. Reference file names where helpful.
-
-          ## Why
-          Explain the motivation or reason behind this change. If the reason is obvious
-          from the commits, state it clearly. If you cannot determine the reason, write:
-          !REWRITE — could not determine the motivation for this change. Please fill in manually.
-
-          ## Testing
-          Brief note on what was tested or how a reviewer can verify this works.
-
-          RULES:
-          - Be concise and factual. Do not pad or use filler phrases.
-          - If any section is genuinely unclear from the available information, write
-            !REWRITE followed by a specific question or note about what is missing.
-          - Do not invent features or changes that are not visible in the diff or commits.
-          - Output ONLY the markdown description. No preamble, no "Here is the rewritten..." intro.
+          cat << 'EOF' >> prompt.txt
           """
 
-          payload = {
-              "model": "claude-sonnet-4-20250514",
-              "max_tokens": 1024,
-              "messages": [{"role": "user", "content": prompt}],
-          }
+          INSTRUCTIONS:
+          1. Output ONLY raw Markdown. No intro sentence, no filler.
+          2. Do not invent changes not visible in the diff or commits.
+          3. If you cannot determine the reason for a change, write exactly:
+             !REWRITE — could not determine motivation. Please fill in manually.
 
-          req = urllib.request.Request(
-              "https://api.anthropic.com/v1/messages",
-              data=json.dumps(payload).encode(),
-              headers={
-                  "x-api-key":         api_key,
-                  "anthropic-version": "2023-06-01",
-                  "content-type":      "application/json",
-              },
-              method="POST",
-          )
+          Use EXACTLY this format:
 
-          try:
-              with urllib.request.urlopen(req, timeout=60) as resp:
-                  body = json.loads(resp.read())
-                  description = body["content"][0]["text"].strip()
-          except urllib.error.HTTPError as e:
-              error_body = e.read().decode()
-              print(f"Anthropic API error {e.code}: {error_body}")
-              description = "SKIP"
-          except Exception as e:
-              print(f"Unexpected error: {e}")
-              description = "SKIP"
+          ## 📦 Summary
+          [1-2 sentences: what this PR does and why]
 
-          # Write to GITHUB_OUTPUT — escape newlines for multiline output
-          output_path = os.environ["GITHUB_OUTPUT"]
-          with open(output_path, "a") as f:
-              f.write("description<<EOF_DESCRIPTION\n")
-              f.write(description + "\n")
-              f.write("EOF_DESCRIPTION\n")
+          ---
 
-          print("AI description generated successfully")
-          PYEOF
-        env:
-          PR_TITLE:        ${{ steps.context.outputs.pr_title }}
-          PR_BODY:         ${{ steps.context.outputs.pr_body }}
-          BASE_BRANCH:     ${{ steps.context.outputs.base_branch }}
-          HEAD_BRANCH:     ${{ steps.context.outputs.head_branch }}
-          COMMIT_MESSAGES: ${{ steps.context.outputs.commit_messages }}
-          CHANGED_FILES:   ${{ steps.context.outputs.changed_files }}
-          PATCH:           ${{ steps.context.outputs.patch }}
+          ## 🚀 Major Changes
+          [Breaking changes, new features, architectural changes. If none, write "None"]
 
-      - name: Update PR description
-        if: steps.ai.outputs.description != 'SKIP' && steps.ai.outputs.description != ''
-        uses: actions/github-script@v7
-        env:
-          NEW_DESCRIPTION: ${{ steps.ai.outputs.description }}
-        with:
-          script: |
-            const newBody = process.env.NEW_DESCRIPTION;
+          ---
 
-            await github.rest.pulls.update({
-              owner:       context.repo.owner,
-              repo:        context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              body:        newBody,
-            });
+          ## ✨ Minor Changes
+          [Improvements, refactors, small additions. If none, write "None"]
 
-            console.log("PR description updated successfully");
+          ---
 
-      - name: Skip notice
-        if: steps.ai.outputs.description == 'SKIP'
-        run: echo "Skipped — ANTHROPIC_API_KEY not set or API call failed."
+          ## 🐞 Bug Fixes
+          [Bugs fixed. If none, write "None"]
+
+          ---
+
+          ## 📁 Notes / Migration Steps
+          [Anything a reviewer needs to know to test or deploy this. If none, write "None"]
+          EOF
+
+          echo "Sending to Copilot..."
+          copilot -p "$(cat prompt.txt)" -s > new_description.md
+
+          echo "Updating PR..."
+          gh pr edit $PR_NUMBER --body-file new_description.md
+          echo "Done."
