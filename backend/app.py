@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.routes import (
     auth, profile, dashboard, news, chat,
     conversations, fitness, reminders, journal,
-    memories, stats, models, projects,
+    memories, stats, models, projects, app_settings, calendar,
 )
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
         auth.router, profile.router, dashboard.router, news.router,
         chat.router, conversations.router, fitness.router, reminders.router,
         journal.router, memories.router, stats.router, models.router,
-        projects.router,
+        projects.router, app_settings.router, calendar.router,
     ]:
         app.include_router(router)
 

@@ -1,10 +1,7 @@
+import re as _re
 import datetime
 from backend import state
 
-import re as _re
-
-# Keywords that require a full-word match so single letters like "c" and short
-# strings like "css" don't falsely match inside unrelated words.
 CODING_KEYWORDS = [
     "code", "coding", "program", "debug", "function", "script", "python",
     "c++", "cpp", "javascript", "typescript", "algorithm", "compile", "bug",
@@ -12,7 +9,6 @@ CODING_KEYWORDS = [
     "gdb", "embedded", "firmware", "gpio", "uart", "spi", "i2c", "bare metal",
     "pico", "raspberry", "microcontroller", "html", "react", "flask",
     "fastapi", "docker", "bash", "shell", "linker", "assembly",
-    # Single-letter / short keywords that need whole-word matching
     r"\bc\b", r"\bcss\b",
 ]
 STUDY_KEYWORDS = [
@@ -24,13 +20,11 @@ STUDY_KEYWORDS = [
     "quantum", "relativity", "calculus", "linear algebra", "differential",
     "probability", "fourier", "laplace", "physics", "theorem",
     "derive", "proof", "algorithm design",
-    # Whole-word matches to avoid "network" matching "networking" etc.
     r"\bnetwork\b", r"\btcp\b", r"\budp\b", r"\bmath\b",
     r"\bprocess\b", r"\bthread\b", r"\bcache\b",
 ]
 
-# Keywords that start with r"\" are treated as regex patterns;
-# all others are simple substring matches.
+
 def _matches(keywords: list[str], text: str) -> bool:
     for kw in keywords:
         if kw.startswith(r"\b"):
@@ -54,10 +48,17 @@ def build_system_prompt(
     mode: str,
     memories: list[str],
     search_context: str,
-    upcoming_reminders: list[dict],
+    app_context: str,
     user: dict,
-    projects: list[dict] | None = None,
 ) -> str:
+    """
+    Builds the system prompt for the AI model.
+
+    app_context is a pre-built string from build_app_contexts() in app_context.py.
+    It contains only context blocks from currently enabled optional apps
+    (fitness, reminders, projects, journal, etc.).
+    Pass an empty string if no optional apps are enabled or relevant.
+    """
     now   = datetime.datetime.now()
     name  = user.get("name", "User")
     brief = user.get("brief", "")
@@ -68,15 +69,10 @@ def build_system_prompt(
         f"User: {name}\n"
         + (f"About the user: {brief}\n" if brief else "")
     )
-    if upcoming_reminders:
-        ground_truth += "\nUpcoming events:\n"
-        ground_truth += "".join(
-            f"  • {r['due_date']}: {r['title']}\n" for r in upcoming_reminders[:5]
-        )
     ground_truth += (
         "\n[RULES]\n"
         "1. Never invent personal facts about the user.\n"
-        "2. Only reference events from the list above.\n"
+        "2. Only reference events listed in the context above.\n"
         "3. State uncertainty explicitly.\n"
     )
 
@@ -98,34 +94,12 @@ def build_system_prompt(
         ),
     }
 
-    projects_block = ""
-    if projects:
-        projects_block = "\n[PROJECTS — the user's saved projects and files]\n"
-        for proj in projects:
-            projects_block += f"Project: {proj['name']}"
-            if proj.get("description"):
-                projects_block += f" — {proj['description']}"
-            projects_block += "\n"
-            for f in proj.get("files", []):
-                projects_block += f"  File: {f['filename']}\n"
-                if f.get("content"):
-                    # Include up to 3000 chars per file so context stays manageable
-                    snippet = f["content"][:3000]
-                    if len(f["content"]) > 3000:
-                        snippet += "\n… [truncated]"
-                    projects_block += f"  Content:\n{snippet}\n"
-        projects_block += (
-            "\nWhen the user references a project or file by name, use the content above. "
-            "You can read, explain, or modify any file shown. "
-            "Be specific — quote exact lines when relevant.\n"
-        )
-
     return (
         ground_truth
         + "\n"
         + mode_instructions.get(mode, mode_instructions["general"])
         + memory_block
-        + projects_block
+        + (f"\n\n{app_context}" if app_context else "")
         + (f"\n\n{search_context}" if search_context else "")
     )
 

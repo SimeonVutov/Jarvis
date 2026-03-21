@@ -29,7 +29,8 @@ def ensure_tables(con: sqlite3.Connection) -> None:
             ts       TEXT NOT NULL,
             category TEXT NOT NULL,
             content  TEXT NOT NULL,
-            tags     TEXT DEFAULT ''
+            tags     TEXT DEFAULT '',
+            app_id   TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS fitness (
             date     TEXT PRIMARY KEY,
@@ -68,6 +69,85 @@ def ensure_tables(con: sqlite3.Connection) -> None:
             is_binary  INTEGER DEFAULT 0,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS calendar_tasks (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            title            TEXT NOT NULL,
+            description      TEXT DEFAULT '',
+            date             TEXT NOT NULL,
+            start_time       TEXT,
+            duration_minutes INTEGER DEFAULT 0,
+            level            TEXT DEFAULT 'low',
+            group_id         INTEGER,
+            done             INTEGER DEFAULT 0,
+            created_at       TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            start_date  TEXT NOT NULL,
+            start_time  TEXT,
+            end_date    TEXT,
+            end_time    TEXT,
+            level       TEXT DEFAULT 'low',
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS calendar_groups (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            color      TEXT DEFAULT '#00c8f0',
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS calendar_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS calendar_groups (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            color      TEXT DEFAULT '#00c8f0',
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS calendar_tasks (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            title            TEXT NOT NULL,
+            description      TEXT DEFAULT '',
+            date             TEXT NOT NULL,
+            start_time       TEXT,
+            duration_minutes INTEGER,
+            priority         TEXT DEFAULT 'mid',
+            group_id         INTEGER,
+            done             INTEGER DEFAULT 0,
+            created_at       TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            date        TEXT NOT NULL,
+            start_time  TEXT NOT NULL,
+            end_time    TEXT NOT NULL,
+            priority    TEXT DEFAULT 'mid',
+            created_at  TEXT NOT NULL
+        );
         PRAGMA journal_mode=WAL;
     """)
     con.commit()
+    _run_migrations(con)
+
+
+def _run_migrations(con: sqlite3.Connection) -> None:
+    """
+    Safe ALTER TABLE migrations for columns added after initial release.
+    Each migration is idempotent — silently skips if the column exists.
+    """
+    migrations = [
+        # v2.1 — app_id lets recall_memories filter by disabled app
+        "ALTER TABLE memories ADD COLUMN app_id TEXT DEFAULT ''",
+    ]
+    for sql in migrations:
+        try:
+            con.execute(sql)
+            con.commit()
+        except Exception:
+            pass  # Column already exists — safe to ignore
