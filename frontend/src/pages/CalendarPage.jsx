@@ -154,22 +154,53 @@ function ItemModal({modal,groups,pColors,onClose,onSave}){
 // ── CalendarSettingsPanel ─────────────────────────────────────────────────────
 
 function CalendarSettingsPanel({settings,groups,onSave,onGroupsChange}){
-  const[form,setForm]=useState({...settings});
+  const[form,setForm]=useState({
+    context_days_before: settings.context_days_before ?? 7,
+    context_days_ahead:  settings.context_days_ahead  ?? 30,
+    priority_labels:     settings.priority_labels     || {high:"High",mid:"Medium",low:"Low"},
+    priority_colors:     settings.priority_colors     || {...DEF_COLORS},
+  });
   const[ng,setNg]=useState({name:"",color:"#00c8f0"});
-  async function save(){await jsonPut("/api/calendar/settings",form);onSave(form);}
+  const[saved,setSaved]=useState(false);
+
+  async function save(){
+    // Only send the fields the backend SettingsUpdate knows about
+    await jsonPut("/api/calendar/settings",{
+      context_days_before: form.context_days_before,
+      context_days_ahead:  form.context_days_ahead,
+    });
+    onSave(form);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),1500);
+  }
   async function addGrp(){if(!ng.name.trim())return;await jsonPost("/api/calendar/groups",ng);setNg({name:"",color:"#00c8f0"});onGroupsChange();}
   async function delGrp(id){if(!confirm("Remove group? Tasks will become ungrouped."))return;await httpDel(`/api/calendar/groups/${id}`);onGroupsChange();}
+
   return(
     <div className="card" style={{marginBottom:16}}>
       <div className="card-title">Calendar Settings</div>
+
       <div style={{marginBottom:14}}>
-        <div style={{fontSize:11,color:"var(--text2)",marginBottom:6}}>Days of tasks/events sent to AI</div>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <input className="input" type="number" min={1} max={30} value={form.ai_context_days}
-                 onChange={e=>setForm(f=>({...f,ai_context_days:parseInt(e.target.value)}))} style={{width:76}} />
-          <span style={{fontSize:11,color:"var(--text3)"}}>days ahead</span>
+        <div style={{fontSize:11,color:"var(--text2)",marginBottom:8}}>AI context window — days sent to the assistant each conversation</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <div style={{fontSize:10,color:"var(--text3)",fontFamily:"var(--mono)",marginBottom:4}}>DAYS BEFORE TODAY</div>
+            <input className="input" type="number" min={0} max={90}
+                   value={form.context_days_before}
+                   onChange={e=>setForm(f=>({...f,context_days_before:Math.max(0,parseInt(e.target.value)||0)}))} />
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"var(--text3)",fontFamily:"var(--mono)",marginBottom:4}}>DAYS AHEAD</div>
+            <input className="input" type="number" min={1} max={90}
+                   value={form.context_days_ahead}
+                   onChange={e=>setForm(f=>({...f,context_days_ahead:Math.max(1,parseInt(e.target.value)||1)}))} />
+          </div>
+        </div>
+        <div style={{fontSize:10,color:"var(--text3)",marginTop:6}}>
+          With these settings the AI will see {form.context_days_before + form.context_days_ahead + 1} days of your calendar per message.
         </div>
       </div>
+
       <div style={{marginBottom:14}}>
         <div style={{fontSize:11,color:"var(--text2)",marginBottom:8}}>Priority labels and colours</div>
         {["high","mid","low"].map(p=>(
@@ -183,6 +214,7 @@ function CalendarSettingsPanel({settings,groups,onSave,onGroupsChange}){
           </div>
         ))}
       </div>
+
       <div style={{marginBottom:14}}>
         <div style={{fontSize:11,color:"var(--text2)",marginBottom:8}}>Task groups</div>
         {groups.map(g=>(
@@ -200,7 +232,10 @@ function CalendarSettingsPanel({settings,groups,onSave,onGroupsChange}){
           <button className="btn btn-primary btn-sm" onClick={addGrp}>Add</button>
         </div>
       </div>
-      <button className="btn btn-primary" onClick={save}>Save settings</button>
+
+      <button className="btn btn-primary" onClick={save} style={{minWidth:120}}>
+        {saved ? "✓ Saved" : "Save settings"}
+      </button>
     </div>
   );
 }
@@ -215,7 +250,7 @@ function CalendarPage() {
   const[tasks,setTasks]     =useState([]);
   const[events,setEvents]   =useState([]);
   const[groups,setGroups]   =useState([]);
-  const[calCfg,setCalCfg]   =useState({ai_context_days:7,priority_labels:{high:"High",mid:"Medium",low:"Low"},priority_colors:{...DEF_COLORS}});
+  const[calCfg,setCalCfg]   =useState({context_days_before:7,context_days_ahead:30,priority_labels:{high:"High",mid:"Medium",low:"Low"},priority_colors:{...DEF_COLORS}});
   const[modal,setModal]     =useState(null);
   const[showCfg,setShowCfg] =useState(false);
   const tlRef=useRef(null);

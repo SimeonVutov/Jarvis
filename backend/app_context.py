@@ -114,64 +114,74 @@ def get_journal_context(con: sqlite3.Connection, user: dict) -> str:
 
 def get_calendar_context(con: sqlite3.Connection, user: dict) -> str:
     """
-    Tasks and events for the configured context window.
-    Includes done status so the AI can answer questions like
-    'how many tasks do I have left today?'
+    Tasks and events for the configured context window (days_before..today..days_ahead).
+    Inlined to avoid importing from backend.routes at context-build time.
     """
-    from backend.routes.calendar import _get_settings, _decode_task, _decode_event, LEVEL_ORDER
+    LEVEL_ORDER = {"high": 4, "mid": 3, "low": 2, "not_important": 1}
 
-    settings    = _get_settings(con)
-    days_before = settings.get("context_days_before", 7)
-    days_ahead  = settings.get("context_days_ahead",  30)
+    # Read settings from DB (fall back to defaults if table empty)
+    rows        = con.execute("SELECT key, value FROM calendar_settings").fetchall()
+    cfg         = {"context_days_before": 7, "context_days_ahead": 30}
+    for r in rows:
+        cfg[r["key"]] = int(r["value"])
+    days_before = cfg.get("context_days_before", 7)
+    days_ahead  = cfg.get("context_days_ahead",  30)
 
-    today = datetime.date.today()
-    start = (today - datetime.timedelta(days=days_before)).isoformat()
-    end   = (today + datetime.timedelta(days=days_ahead)).isoformat()
+    today     = datetime.date.today()
+    today_iso = today.isoformat()
+    start     = (today - datetime.timedelta(days=days_before)).isoformat()
+    end       = (today + datetime.timedelta(days=days_ahead)).isoformat()
 
     tasks = con.execute(
-        "SELECT * FROM calendar_tasks WHERE date>=? AND date<=? ORDER BY date,start_time NULLS LAST",
+        "SELECT * FROM calendar_tasks WHERE date>=? AND date<=? ORDER BY date, start_time",
         (start, end),
     ).fetchall()
     events = con.execute(
-        "SELECT * FROM calendar_events WHERE start_date>=? AND start_date<=? ORDER BY start_date,start_time NULLS LAST",
+        "SELECT * FROM calendar_events WHERE start_date>=? AND start_date<=? ORDER BY start_date, start_time",
         (start, end),
     ).fetchall()
     groups = {
         r["id"]: safe_decrypt(r["name"])
-        for r in con.execute("SELECT id,name FROM calendar_groups").fetchall()
+        for r in con.execute("SELECT id, name FROM calendar_groups").fetchall()
     }
 
     if not tasks and not events:
         return ""
 
-    lines     = [f"[CALENDAR — tasks and events from {start} to {end}]"]
-    today_iso = today.isoformat()
+    lines = [f"[CALENDAR — {start} to {end}  |  {days_before} days back, {days_ahead} days ahead]"]
 
     # Overdue undone tasks
-    overdue = [_decode_task(t) for t in tasks if t["date"] < today_iso and not t["done"]]
+    overdue = [t for t in tasks if t["date"] < today_iso and not t["done"]]
     if overdue:
         lines.append("OVERDUE (not done):")
         for t in sorted(overdue, key=lambda x: LEVEL_ORDER.get(x["level"], 0), reverse=True):
-            lines.append(f"  • [{t['level'].upper()}] {t['title']} — {t['date']} — NOT DONE")
+            lines.append(f"  • [{t['level'].upper()}] {safe_decrypt(t['title'])} — {t['date']}")
 
-    # Upcoming tasks
-    upcoming_tasks = [_decode_task(t) for t in tasks if t["date"] >= today_iso]
-    if upcoming_tasks:
-        lines.append("UPCOMING TASKS:")
-        for t in upcoming_tasks:
-            status = "DONE" if t["done"] else "not done"
-            group  = f" — Group: {groups[t['group_id']]}" if t.get("group_id") and t["group_id"] in groups else ""
-            time   = f" at {t['start_time']}" if t.get("start_time") else ""
-            lines.append(f"  • [{t['level'].upper()}] {t['title']} — {t['date']}{time} — {status}{group}")
+    # All tasks from today onward
+    upcoming = [t for t in tasks if t["date"] >= today_iso]
+    if upcoming:
+        lines.append("TASKS (today and upcoming):")
+        for t in upcoming:
+            status = "✓ done" if t["done"] else "not done"
+            group  = f" [{groups[t['group_id']]}]" if t.get("group_id") and t["group_id"] in groups else ""
+            time   = f" {t['start_time']}" if t.get("start_time") else ""
+            lines.append(f"  • [{t['level'].upper()}]{time} {safe_decrypt(t['title'])} — {t['date']} — {status}{group}")
+
+    # Past tasks (for reference, show done status)
+    past = [t for t in tasks if t["date"] < today_iso and t["done"]]
+    if past:
+        lines.append("RECENTLY COMPLETED:")
+        for t in past[-5:]:  # last 5 only
+            lines.append(f"  • {safe_decrypt(t['title'])} — {t['date']}")
 
     # Events
     if events:
         lines.append("EVENTS:")
         for e in events:
-            ev      = _decode_event(e)
-            start_t = f" {ev['start_time']}" if ev.get("start_time") else ""
-            end_t   = f"–{ev['end_time']}" if ev.get("end_time") else ""
-            lines.append(f"  • [{ev['level'].upper()}] {ev['title']} — {ev['start_date']}{start_t}{end_t}")
+            start_t = f" {e['start_time']}" if e.get("start_time") else ""
+            end_t   = f"–{e['end_time']}" if e.get("end_time") else ""
+            cross   = f" (ends {e['end_date']})" if e.get("end_date") and e["end_date"] != e["start_date"] else ""
+            lines.append(f"  • [{e['level'].upper()}]{start_t}{end_t} {safe_decrypt(e['title'])} — {e['start_date']}{cross}")
 
     return "\n".join(lines)
 
