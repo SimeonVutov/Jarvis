@@ -1,51 +1,83 @@
 """
-Calendar routes — tasks, events, groups, and per-app settings.
-
-Tasks:   have optional time, duration, group, and a done toggle.
-Events:  always have start+end time; end_time < start_time = overnight.
-Groups:  belong to tasks only; each has a name and a colour.
-Settings: stored in config.json under the "calendar" key.
+Calendar routes — tasks, events, groups, and settings.
+All Pydantic models are defined inline — no dependency on backend.schemas.
 """
 
 import datetime
-from fastapi import APIRouter, HTTPException, Query
-
+from typing import Optional
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from backend import state
 from backend.database import get_connection
 from backend.crypto import encrypt, safe_decrypt
-from backend.config import load_config, save_config
-from backend.schemas import (
-    CalendarTaskCreate, CalendarTaskUpdate, CalendarTaskDone,
-    CalendarEventCreate, CalendarEventUpdate,
-    CalendarGroupCreate, CalendarGroupUpdate,
-    CalendarSettingsUpdate,
-)
 
-router = APIRouter(prefix="/api/calendar")
+router = APIRouter()
 
-DEFAULT_SETTINGS = {
-    "ai_context_days": 7,
-    "priority_labels": {"high": "High", "mid": "Medium", "low": "Low"},
-    "priority_colors": {"high": "#ef4444", "mid": "#f59e0b", "low": "#64748b"},
-}
+LEVEL_ORDER = {"high": 4, "mid": 3, "low": 2, "not_important": 1}
+DEFAULT_SETTINGS = {"context_days_before": 7, "context_days_ahead": 30}
 
+
+# ── Pydantic schemas ───────────────────────────────────────────────────────────
+
+class TaskCreate(BaseModel):
+    title:            str
+    description:      str = ""
+    date:             str
+    start_time:       Optional[str] = None
+    duration_minutes: int = 0
+    level:            str = "low"
+    group_id:         Optional[int] = None
+
+class TaskUpdate(TaskCreate):
+    pass
+
+class EventCreate(BaseModel):
+    title:       str
+    description: str = ""
+    start_date:  str
+    start_time:  Optional[str] = None
+    end_date:    Optional[str] = None
+    end_time:    Optional[str] = None
+    level:       str = "low"
+
+class EventUpdate(EventCreate):
+    pass
+
+class GroupCreate(BaseModel):
+    name:  str
+    color: str = "#00c8f0"
+
+class SettingsUpdate(BaseModel):
+    context_days_before: Optional[int] = None
+    context_days_ahead:  Optional[int] = None
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _require_auth():
     if not state.UNLOCKED:
         raise HTTPException(401, "Not authenticated")
 
 
+def _get_settings(con) -> dict:
+    rows   = con.execute("SELECT key, value FROM calendar_settings").fetchall()
+    result = dict(DEFAULT_SETTINGS)
+    for r in rows:
+        result[r["key"]] = r["value"]
+    return {k: int(v) for k, v in result.items()}
+
+
 def _decode_task(row) -> dict:
     d = dict(row)
     d["title"]       = safe_decrypt(d["title"])
-    d["description"] = safe_decrypt(d["description"])
+    d["description"] = safe_decrypt(d["description"]) if d.get("description") else ""
     return d
 
 
 def _decode_event(row) -> dict:
     d = dict(row)
     d["title"]       = safe_decrypt(d["title"])
-    d["description"] = safe_decrypt(d["description"])
+    d["description"] = safe_decrypt(d["description"]) if d.get("description") else ""
     return d
 
 
@@ -55,90 +87,126 @@ def _decode_group(row) -> dict:
     return d
 
 
-def _date_range(year: int, month: int):
-    """Return (date_from, date_to) strings covering the month ±3 days."""
-    first = datetime.date(year, month, 1)
-    last  = (datetime.date(year, month + 1, 1) if month < 12
-             else datetime.date(year + 1, 1, 1)) - datetime.timedelta(days=1)
-    return (
-        (first - datetime.timedelta(days=3)).isoformat(),
-        (last  + datetime.timedelta(days=3)).isoformat(),
-    )
+# ── Month summary ──────────────────────────────────────────────────────────────
 
-
-# ── Tasks ─────────────────────────────────────────────────────────────────────
-
-@router.get("/tasks")
-async def list_tasks(year: int = Query(...), month: int = Query(...)):
+@router.get("/api/calendar/month")
+async def get_month(year: int, month: int):
+    """Returns a summary of tasks and events for an entire month grid."""
     _require_auth()
-    con = get_connection()
-    date_from, date_to = _date_range(year, month)
-    rows = con.execute(
-        "SELECT * FROM calendar_tasks WHERE date >= ? AND date <= ? ORDER BY date, start_time, priority",
-        (date_from, date_to),
+    con   = get_connection()
+    start = f"{year:04d}-{month:02d}-01"
+    end   = f"{year+1:04d}-01-01" if month == 12 else f"{year:04d}-{month+1:02d}-01"
+
+    tasks = con.execute(
+        "SELECT id,title,date,start_time,level,group_id,done FROM calendar_tasks WHERE date>=? AND date<? ORDER BY date,start_time",
+        (start, end),
+    ).fetchall()
+    events = con.execute(
+        "SELECT id,title,start_date,start_time,end_date,level FROM calendar_events WHERE (start_date>=? AND start_date<?) OR (end_date>=? AND end_date<?)",
+        (start, end, start, end),
     ).fetchall()
     con.close()
-    return [_decode_task(r) for r in rows]
+
+    result: dict = {}
+    for t in tasks:
+        d = t["date"]
+        result.setdefault(d, {"tasks": [], "events": []})
+        result[d]["tasks"].append({
+            "id": t["id"], "title": safe_decrypt(t["title"]),
+            "level": t["level"], "done": bool(t["done"]),
+            "start_time": t["start_time"], "group_id": t["group_id"],
+        })
+    for e in events:
+        for date_key in [e["start_date"], e["end_date"]]:
+            if not date_key or not (start <= date_key < end):
+                continue
+            result.setdefault(date_key, {"tasks": [], "events": []})
+            result[date_key]["events"].append({
+                "id": e["id"], "title": safe_decrypt(e["title"]),
+                "level": e["level"], "start_time": e["start_time"],
+            })
+
+    for day in result.values():
+        day["tasks"].sort(key=lambda x: LEVEL_ORDER.get(x["level"], 0), reverse=True)
+        day["events"].sort(key=lambda x: LEVEL_ORDER.get(x["level"], 0), reverse=True)
+
+    return result
 
 
-@router.post("/tasks")
-async def create_task(body: CalendarTaskCreate):
+# ── Day detail ─────────────────────────────────────────────────────────────────
+
+@router.get("/api/calendar/items")
+async def get_day_items(date: str):
+    """Full task and event list for a specific date including cross-midnight events."""
     _require_auth()
-    ts  = datetime.datetime.now().isoformat()
+    con  = get_connection()
+    prev = (datetime.date.fromisoformat(date) - datetime.timedelta(days=1)).isoformat()
+
+    tasks = con.execute(
+        "SELECT * FROM calendar_tasks WHERE date=? ORDER BY start_time",
+        (date,),
+    ).fetchall()
+    events = con.execute(
+        "SELECT * FROM calendar_events WHERE start_date=? OR (end_date=? AND start_date=?)",
+        (date, date, prev),
+    ).fetchall()
+    groups = con.execute("SELECT * FROM calendar_groups").fetchall()
+    con.close()
+
+    return {
+        "tasks":  [_decode_task(t)  for t in tasks],
+        "events": [_decode_event(e) for e in events],
+        "groups": [_decode_group(g) for g in groups],
+    }
+
+
+# ── Tasks ──────────────────────────────────────────────────────────────────────
+
+@router.post("/api/calendar/tasks")
+async def create_task(body: TaskCreate):
+    _require_auth()
     con = get_connection()
+    ts  = datetime.datetime.now().isoformat()
     cur = con.execute(
-        "INSERT INTO calendar_tasks(title,description,date,start_time,duration_minutes,priority,group_id,done,created_at) "
-        "VALUES(?,?,?,?,?,?,?,0,?)",
-        (encrypt(body.title), encrypt(body.description), body.date,
-         body.start_time, body.duration_minutes, body.priority, body.group_id, ts),
+        "INSERT INTO calendar_tasks(title,description,date,start_time,duration_minutes,level,group_id,done,created_at) VALUES(?,?,?,?,?,?,?,0,?)",
+        (encrypt(body.title), encrypt(body.description), body.date, body.start_time,
+         body.duration_minutes, body.level, body.group_id, ts),
     )
     con.commit()
-    row = con.execute("SELECT * FROM calendar_tasks WHERE id=?", (cur.lastrowid,)).fetchone()
+    tid = cur.lastrowid
     con.close()
-    return _decode_task(row)
+    return {"id": tid, **body.model_dump(), "done": False, "created_at": ts}
 
 
-@router.put("/tasks/{tid}")
-async def update_task(tid: int, body: CalendarTaskUpdate):
+@router.put("/api/calendar/tasks/{tid}")
+async def update_task(tid: int, body: TaskUpdate):
     _require_auth()
     con = get_connection()
-    if not con.execute("SELECT id FROM calendar_tasks WHERE id=?", (tid,)).fetchone():
-        con.close(); raise HTTPException(404, "Task not found")
-
-    fields: dict = {}
-    if body.title            is not None: fields["title"]            = encrypt(body.title)
-    if body.description      is not None: fields["description"]      = encrypt(body.description)
-    if body.date             is not None: fields["date"]             = body.date
-    if body.start_time       is not None: fields["start_time"]       = body.start_time
-    if body.duration_minutes is not None: fields["duration_minutes"] = body.duration_minutes
-    if body.priority         is not None: fields["priority"]         = body.priority
-    if body.group_id         is not None: fields["group_id"]         = body.group_id
-    if body.done             is not None: fields["done"]             = int(body.done)
-
-    if fields:
-        set_clause = ", ".join(f"{k}=?" for k in fields)
-        con.execute(f"UPDATE calendar_tasks SET {set_clause} WHERE id=?",  # nosec B608
-                    list(fields.values()) + [tid])
-        con.commit()
-
-    row = con.execute("SELECT * FROM calendar_tasks WHERE id=?", (tid,)).fetchone()
-    con.close()
-    return _decode_task(row)
-
-
-@router.patch("/tasks/{tid}/done")
-async def toggle_task_done(tid: int, body: CalendarTaskDone):
-    _require_auth()
-    con = get_connection()
-    con.execute("UPDATE calendar_tasks SET done=? WHERE id=?", (int(body.done), tid))
+    con.execute(
+        "UPDATE calendar_tasks SET title=?,description=?,date=?,start_time=?,duration_minutes=?,level=?,group_id=? WHERE id=?",
+        (encrypt(body.title), encrypt(body.description), body.date, body.start_time,
+         body.duration_minutes, body.level, body.group_id, tid),
+    )
     con.commit()
-    row = con.execute("SELECT * FROM calendar_tasks WHERE id=?", (tid,)).fetchone()
     con.close()
-    if not row: raise HTTPException(404, "Task not found")
-    return _decode_task(row)
+    return {"success": True}
 
 
-@router.delete("/tasks/{tid}")
+@router.patch("/api/calendar/tasks/{tid}/done")
+async def toggle_task_done(tid: int):
+    _require_auth()
+    con = get_connection()
+    row = con.execute("SELECT done FROM calendar_tasks WHERE id=?", (tid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Task not found")
+    new_done = 0 if row["done"] else 1
+    con.execute("UPDATE calendar_tasks SET done=? WHERE id=?", (new_done, tid))
+    con.commit()
+    con.close()
+    return {"done": bool(new_done)}
+
+
+@router.delete("/api/calendar/tasks/{tid}")
 async def delete_task(tid: int):
     _require_auth()
     con = get_connection()
@@ -148,65 +216,39 @@ async def delete_task(tid: int):
     return {"deleted": tid}
 
 
-# ── Events ────────────────────────────────────────────────────────────────────
+# ── Events ─────────────────────────────────────────────────────────────────────
 
-@router.get("/events")
-async def list_events(year: int = Query(...), month: int = Query(...)):
+@router.post("/api/calendar/events")
+async def create_event(body: EventCreate):
     _require_auth()
     con = get_connection()
-    date_from, date_to = _date_range(year, month)
-    rows = con.execute(
-        "SELECT * FROM calendar_events WHERE date >= ? AND date <= ? ORDER BY date, start_time",
-        (date_from, date_to),
-    ).fetchall()
-    con.close()
-    return [_decode_event(r) for r in rows]
-
-
-@router.post("/events")
-async def create_event(body: CalendarEventCreate):
-    _require_auth()
     ts  = datetime.datetime.now().isoformat()
-    con = get_connection()
     cur = con.execute(
-        "INSERT INTO calendar_events(title,description,date,start_time,end_time,priority,created_at) "
-        "VALUES(?,?,?,?,?,?,?)",
-        (encrypt(body.title), encrypt(body.description), body.date,
-         body.start_time, body.end_time, body.priority, ts),
+        "INSERT INTO calendar_events(title,description,start_date,start_time,end_date,end_time,level,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        (encrypt(body.title), encrypt(body.description), body.start_date, body.start_time,
+         body.end_date, body.end_time, body.level, ts),
     )
     con.commit()
-    row = con.execute("SELECT * FROM calendar_events WHERE id=?", (cur.lastrowid,)).fetchone()
+    eid = cur.lastrowid
     con.close()
-    return _decode_event(row)
+    return {"id": eid, **body.model_dump(), "created_at": ts}
 
 
-@router.put("/events/{eid}")
-async def update_event(eid: int, body: CalendarEventUpdate):
+@router.put("/api/calendar/events/{eid}")
+async def update_event(eid: int, body: EventUpdate):
     _require_auth()
     con = get_connection()
-    if not con.execute("SELECT id FROM calendar_events WHERE id=?", (eid,)).fetchone():
-        con.close(); raise HTTPException(404, "Event not found")
-
-    fields: dict = {}
-    if body.title       is not None: fields["title"]       = encrypt(body.title)
-    if body.description is not None: fields["description"] = encrypt(body.description)
-    if body.date        is not None: fields["date"]        = body.date
-    if body.start_time  is not None: fields["start_time"]  = body.start_time
-    if body.end_time    is not None: fields["end_time"]    = body.end_time
-    if body.priority    is not None: fields["priority"]    = body.priority
-
-    if fields:
-        set_clause = ", ".join(f"{k}=?" for k in fields)
-        con.execute(f"UPDATE calendar_events SET {set_clause} WHERE id=?",  # nosec B608
-                    list(fields.values()) + [eid])
-        con.commit()
-
-    row = con.execute("SELECT * FROM calendar_events WHERE id=?", (eid,)).fetchone()
+    con.execute(
+        "UPDATE calendar_events SET title=?,description=?,start_date=?,start_time=?,end_date=?,end_time=?,level=? WHERE id=?",
+        (encrypt(body.title), encrypt(body.description), body.start_date, body.start_time,
+         body.end_date, body.end_time, body.level, eid),
+    )
+    con.commit()
     con.close()
-    return _decode_event(row)
+    return {"success": True}
 
 
-@router.delete("/events/{eid}")
+@router.delete("/api/calendar/events/{eid}")
 async def delete_event(eid: int):
     _require_auth()
     con = get_connection()
@@ -216,9 +258,9 @@ async def delete_event(eid: int):
     return {"deleted": eid}
 
 
-# ── Groups ────────────────────────────────────────────────────────────────────
+# ── Groups ─────────────────────────────────────────────────────────────────────
 
-@router.get("/groups")
+@router.get("/api/calendar/groups")
 async def list_groups():
     _require_auth()
     con  = get_connection()
@@ -227,35 +269,33 @@ async def list_groups():
     return [_decode_group(r) for r in rows]
 
 
-@router.post("/groups")
-async def create_group(body: CalendarGroupCreate):
+@router.post("/api/calendar/groups")
+async def create_group(body: GroupCreate):
     _require_auth()
-    ts  = datetime.datetime.now().isoformat()
     con = get_connection()
+    ts  = datetime.datetime.now().isoformat()
     cur = con.execute(
         "INSERT INTO calendar_groups(name,color,created_at) VALUES(?,?,?)",
         (encrypt(body.name), body.color, ts),
     )
     con.commit()
-    row = con.execute("SELECT * FROM calendar_groups WHERE id=?", (cur.lastrowid,)).fetchone()
+    gid = cur.lastrowid
     con.close()
-    return _decode_group(row)
+    return {"id": gid, "name": body.name, "color": body.color, "created_at": ts}
 
 
-@router.put("/groups/{gid}")
-async def update_group(gid: int, body: CalendarGroupUpdate):
+@router.put("/api/calendar/groups/{gid}")
+async def update_group(gid: int, body: GroupCreate):
     _require_auth()
     con = get_connection()
-    if body.name  is not None: con.execute("UPDATE calendar_groups SET name=?  WHERE id=?", (encrypt(body.name), gid))
-    if body.color is not None: con.execute("UPDATE calendar_groups SET color=? WHERE id=?", (body.color, gid))
+    con.execute("UPDATE calendar_groups SET name=?,color=? WHERE id=?",
+                (encrypt(body.name), body.color, gid))
     con.commit()
-    row = con.execute("SELECT * FROM calendar_groups WHERE id=?", (gid,)).fetchone()
     con.close()
-    if not row: raise HTTPException(404, "Group not found")
-    return _decode_group(row)
+    return {"success": True}
 
 
-@router.delete("/groups/{gid}")
+@router.delete("/api/calendar/groups/{gid}")
 async def delete_group(gid: int):
     _require_auth()
     con = get_connection()
@@ -266,22 +306,28 @@ async def delete_group(gid: int):
     return {"deleted": gid}
 
 
-# ── Settings ──────────────────────────────────────────────────────────────────
+# ── Settings ───────────────────────────────────────────────────────────────────
 
-@router.get("/settings")
-async def get_calendar_settings():
-    cfg = load_config()
-    return {**DEFAULT_SETTINGS, **cfg.get("calendar", {})}
-
-
-@router.put("/settings")
-async def update_calendar_settings(body: CalendarSettingsUpdate):
+@router.get("/api/calendar/settings")
+async def get_settings():
     _require_auth()
-    cfg = load_config()
-    cal = {**DEFAULT_SETTINGS, **cfg.get("calendar", {})}
-    if body.ai_context_days is not None: cal["ai_context_days"] = body.ai_context_days
-    if body.priority_labels is not None: cal["priority_labels"] = body.priority_labels
-    if body.priority_colors is not None: cal["priority_colors"] = body.priority_colors
-    cfg["calendar"] = cal
-    save_config(cfg)
-    return cal
+    con      = get_connection()
+    settings = _get_settings(con)
+    con.close()
+    return settings
+
+
+@router.put("/api/calendar/settings")
+async def update_settings(body: SettingsUpdate):
+    _require_auth()
+    con = get_connection()
+    if body.context_days_before is not None:
+        con.execute("INSERT OR REPLACE INTO calendar_settings(key,value) VALUES(?,?)",
+                    ("context_days_before", str(body.context_days_before)))
+    if body.context_days_ahead is not None:
+        con.execute("INSERT OR REPLACE INTO calendar_settings(key,value) VALUES(?,?)",
+                    ("context_days_ahead", str(body.context_days_ahead)))
+    con.commit()
+    settings = _get_settings(con)
+    con.close()
+    return settings
