@@ -1,0 +1,100 @@
+name: AI PR Description
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  rewrite:
+    name: Rewrite PR description with Copilot
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Build prompt and generate description
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+          GH_TOKEN:             ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:            ${{ github.event.pull_request.number }}
+        run: |
+          cat << 'EOF' > prompt.txt
+          You are a technical writer reviewing a Pull Request for Jarvis.
+
+          PROJECT CONTEXT:
+          Jarvis is a fully local, encrypted personal AI assistant:
+          - Backend: Python, FastAPI, SQLite, ChromaDB, Ollama (local LLMs)
+          - Frontend: React 18 (no build step, CDN Babel), modular CSS + JSX files
+          - Encryption: AES-256-GCM, PBKDF2-SHA256 600k iterations, all data local
+          - Features: streaming AI chat, fitness tracking, reminders, news briefing,
+            project file storage, background model downloads, stop-generation, SVG charts
+          - Branch strategy: main = stable, develop = integration, feature/* fix/* = work branches
+
+          Current PR description:
+          """
+          EOF
+
+          gh pr view $PR_NUMBER --json body -q .body >> prompt.txt
+
+          echo -e '\n"""\nCommit messages:\n"""' >> prompt.txt
+          gh pr view $PR_NUMBER --json commits --jq '.commits[-30:] | .[] | "- \(.messageHeadline)"' >> prompt.txt
+
+          echo -e '\n"""\nChanged files:\n"""' >> prompt.txt
+          gh pr diff $PR_NUMBER --name-only >> prompt.txt
+
+          echo -e '\n"""\nCode changes (truncated):\n"""' >> prompt.txt
+          gh pr diff $PR_NUMBER -- . ':(exclude)*.lock' ':(exclude)*-lock.json' | head -n 500 >> prompt.txt
+
+          cat << 'EOF' >> prompt.txt
+          """
+
+          INSTRUCTIONS:
+          1. Output ONLY raw Markdown. No intro sentence, no filler.
+          2. Do not invent changes not visible in the diff or commits.
+          3. If you cannot determine the reason for a change, write exactly:
+             !REWRITE — could not determine motivation. Please fill in manually.
+
+          Use EXACTLY this format:
+
+          ## 📦 Summary
+          [1-2 sentences: what this PR does and why]
+
+          ---
+
+          ## 🚀 Major Changes
+          [Breaking changes, new features, architectural changes. If none, write "None"]
+
+          ---
+
+          ## ✨ Minor Changes
+          [Improvements, refactors, small additions. If none, write "None"]
+
+          ---
+
+          ## 🐞 Bug Fixes
+          [Bugs fixed. If none, write "None"]
+
+          ---
+
+          ## 📁 Notes / Migration Steps
+          [Anything a reviewer needs to know to test or deploy this. If none, write "None"]
+          EOF
+
+          echo "Sending to Copilot..."
+          copilot -p "$(cat prompt.txt)" -s > new_description.md
+
+          echo "Updating PR..."
+          gh pr edit $PR_NUMBER --body-file new_description.md
+          echo "Done."
