@@ -5,11 +5,23 @@ from fastapi import APIRouter, HTTPException
 import httpx
 from backend import state
 from backend.config import load_config
+from backend.app_registry import REGISTRY
 from backend.database import get_connection
 from backend.crypto import safe_decrypt
 from backend.ai import format_search_results
 
 router = APIRouter()
+
+
+def _get_enabled_app_ids(cfg: dict | None = None) -> set[str]:
+    if cfg is None:
+        cfg = load_config()
+    stored = cfg.get("apps", {})
+    enabled = set()
+    for app in REGISTRY:
+        if app.core or stored.get(app.id, {}).get("enabled", True):
+            enabled.add(app.id)
+    return enabled
 
 
 def _require_auth():
@@ -44,21 +56,23 @@ async def dashboard_data():
             if d.get(k): d[k] = safe_decrypt(d[k])
         return d
 
+    enabled_ids = _get_enabled_app_ids()
     return {
         "weekday":        today.strftime("%A"),
         "date":           today.strftime("%B %d, %Y"),
         "user_name":      user.get("name", "User"),
         "period":         period,
-        "fitness": {
+        "fitness":        {
             "yesterday": decode_fitness(fit_y),
             "today":     decode_fitness(fit_t),
-        },
-        "reminders": [
+        } if "fitness" in enabled_ids else None,
+        "reminders":      [
             {**dict(r), "title": safe_decrypt(r["title"]), "description": safe_decrypt(r["description"])}
             for r in reminders
-        ],
+        ] if "reminders" in enabled_ids else [],
         "total_sessions": total_sessions,
         "models":         state.MODELS,
+        "enabled_apps":   sorted(enabled_ids),
     }
 
 

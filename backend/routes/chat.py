@@ -13,6 +13,8 @@ from backend.database import get_connection
 from backend.crypto import encrypt, safe_decrypt
 from backend.memory import store_memory, recall_memories
 from backend.ai import detect_mode, build_system_prompt, should_web_search, web_search, format_search_results
+from backend.app_context import build_app_contexts
+from backend.app_registry import REGISTRY, tags_for_enabled_apps
 from backend.config import load_config
 from backend.schemas import ChatRequest
 
@@ -24,6 +26,17 @@ def _require_auth():
         raise HTTPException(401, "Not authenticated")
 
 
+def _get_enabled_app_ids(cfg: dict | None = None) -> set[str]:
+    if cfg is None:
+        cfg = load_config()
+    stored = cfg.get("apps", {})
+    enabled = set()
+    for app in REGISTRY:
+        if app.core or stored.get(app.id, {}).get("enabled", True):
+            enabled.add(app.id)
+    return enabled
+
+
 @router.post("/api/chat")
 async def chat(body: ChatRequest):
     _require_auth()
@@ -31,56 +44,33 @@ async def chat(body: ChatRequest):
     async def generate() -> AsyncGenerator[str, None]:
         con = get_connection()
         try:
-            user = load_config()["user"]
+            cfg  = load_config()
+            user = cfg["user"]
             mode = detect_mode(body.message, body.mode or "general")
             yield f"data: {json.dumps({'type': 'mode', 'mode': mode})}\n\n"
 
+            # Web search
             search_context = ""
             if should_web_search(body.message):
                 yield f"data: {json.dumps({'type': 'status', 'text': 'Searching the web…'})}\n\n"
-                loop    = asyncio.get_event_loop()
-                results = await loop.run_in_executor(None, partial(web_search, body.message))
+                results = await asyncio.get_event_loop().run_in_executor(
+                    None, partial(web_search, body.message)
+                )
                 search_context = format_search_results(results)
 
-            memories = await asyncio.get_event_loop().run_in_executor(
-                None, partial(recall_memories, con, body.message)
+            # Only recall memories from enabled apps
+            enabled_ids   = _get_enabled_app_ids(cfg)
+            allowed_tags  = tags_for_enabled_apps(enabled_ids)
+            memories      = await asyncio.get_event_loop().run_in_executor(
+                None, partial(recall_memories, con, body.message, 6, allowed_tags)
             )
 
-            today = datetime.date.today().isoformat()
-            reminder_rows = con.execute(
-                "SELECT title, due_date FROM reminders WHERE done=0 AND due_date>=? ORDER BY due_date LIMIT 5",
-                (today,),
-            ).fetchall()
-            upcoming = [{"title": safe_decrypt(r["title"]), "due_date": r["due_date"]} for r in reminder_rows]
+            # Build context blocks from each enabled app
+            app_context = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: build_app_contexts(enabled_ids, con, user)
+            )
 
-            # Load all projects and their text file contents for AI context
-            projects = []
-            proj_rows = con.execute(
-                "SELECT id, name, description FROM projects ORDER BY id"
-            ).fetchall()
-            for proj in proj_rows:
-                files = []
-                file_rows = con.execute(
-                    "SELECT filename, mime_type, content, is_binary FROM project_files WHERE project_id=?",
-                    (proj["id"],),
-                ).fetchall()
-                for f in file_rows:
-                    fname = safe_decrypt(f["filename"])
-                    # Only include text files in context — skip binaries
-                    if not f["is_binary"]:
-                        files.append({
-                            "filename": fname,
-                            "content":  safe_decrypt(f["content"]),
-                        })
-                    else:
-                        files.append({"filename": fname, "content": None})
-                projects.append({
-                    "name":        safe_decrypt(proj["name"]),
-                    "description": safe_decrypt(proj["description"]),
-                    "files":       files,
-                })
-
-            system   = build_system_prompt(mode, memories, search_context, upcoming, user, projects)
+            system   = build_system_prompt(mode, memories, search_context, app_context, user)
             messages = [{"role": "system", "content": system}]
 
             if body.session_id:
@@ -136,7 +126,7 @@ async def chat(body: ChatRequest):
                 yield f"data: {json.dumps({'type': 'done', 'session_id': sid, 'mode': mode})}\n\n"
 
         except asyncio.CancelledError:
-            pass  # Client disconnected — stop button was pressed
+            pass
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         finally:
