@@ -9,6 +9,7 @@ from backend.app_registry import REGISTRY
 from backend.database import get_connection
 from backend.crypto import safe_decrypt
 from backend.ai import format_search_results
+from backend.app_context import build_app_contexts
 
 router = APIRouter()
 
@@ -78,53 +79,41 @@ async def dashboard_data():
 
 @router.get("/api/home/greeting")
 async def home_greeting():
-    """Ask the general model to generate a personalised greeting using today's data."""
+    """Personalised greeting using ALL enabled app contexts — fitness, calendar, reminders, etc."""
     _require_auth()
     cfg    = load_config()
     user   = cfg["user"]
     name   = user.get("name", "User")
     brief  = user.get("brief", "")
-    con    = get_connection()
-    today  = datetime.date.today().isoformat()
     hour   = datetime.datetime.now().hour
     period = "night" if hour < 5 else "morning" if hour < 12 else "afternoon" if hour < 17 else "evening"
 
-    fit   = con.execute("SELECT calories,weight,workout FROM fitness WHERE date=?", (today,)).fetchone()
-    fit_y = con.execute("SELECT workout FROM fitness WHERE date=?",
-                        ((datetime.date.today() - datetime.timedelta(days=1)).isoformat(),)).fetchone()
-    upcoming = con.execute(
-        "SELECT title,due_date FROM reminders WHERE done=0 AND due_date>=? ORDER BY due_date LIMIT 3",
-        (today,)
-    ).fetchall()
-    con.close()
+    enabled_ids = _get_enabled_app_ids(cfg)
+
+    # Build full app context in a thread (opens its own DB connection)
+    loop = asyncio.get_event_loop()
+    app_context = await loop.run_in_executor(
+        None, lambda: build_app_contexts(enabled_ids, None, user)
+    )
 
     context = f"User: {name}\n"
     if brief:
         context += f"About them: {brief}\n"
-    if fit:
-        parts = []
-        if fit["calories"]: parts.append(f"{fit['calories']} kcal")
-        if fit["weight"]:   parts.append(f"{fit['weight']} kg")
-        if fit["workout"]:  parts.append(f"workout: {safe_decrypt(fit['workout'])}")
-        if parts: context += f"Today's fitness: {', '.join(parts)}\n"
-    elif fit_y and fit_y["workout"]:
-        context += f"Yesterday's workout: {safe_decrypt(fit_y['workout'])}\n"
-    if upcoming:
-        context += "Upcoming: " + "; ".join(
-            f"{safe_decrypt(r['title'])} on {r['due_date']}" for r in upcoming
-        ) + "\n"
+    if app_context:
+        context += f"\n{app_context}\n"
 
     prompt = (
         f"{context}\n"
-        f"Write a 1-2 sentence personalised greeting for {name} this {period}. "
-        "Be specific and warm. Mention fitness if logged. Mention urgent reminders. "
-        "Don't start with Hello/Hi/Hey. No hollow filler phrases."
+        f"Write a 1-2 sentence personalised good {period} message for {name}. "
+        "Be specific — reference their actual tasks, fitness, events, or reminders from the context above if present. "
+        "If they have tasks or events today, mention them. "
+        "If they logged fitness, acknowledge it. "
+        "Don't start with Hello/Hi/Hey. No hollow filler phrases. Keep it under 40 words."
     )
     try:
-        loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(None, lambda: ollama.chat(
             model=state.MODELS.get("general", "llama3.1:8b"),
-            options={"num_predict": 100},
+            options={"num_predict": 80},
             messages=[{"role": "user", "content": prompt}],
         )["message"]["content"].strip())
         return {"greeting": text}

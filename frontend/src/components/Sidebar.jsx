@@ -12,7 +12,6 @@ const ALL_NAV_ITEMS = [
   { id:"remind",   icon:"◌",  label:"Reminders", alwaysShow:false },
   { id:"calendar", icon:"◰",  label:"Calendar",  alwaysShow:false },
   { id:"projects", icon:"◧",  label:"Projects",  alwaysShow:false },
-  { id:"journal",  icon:"◩",  label:"Journal",   alwaysShow:false },
   { id:"profile",  icon:"◐",  label:"Profile",   alwaysShow:true },
   { id:"settings", icon:"⚙",  label:"Settings",  alwaysShow:true },
   { id:"models",   icon:"◑",  label:"Models",    alwaysShow:true },

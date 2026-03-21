@@ -3,9 +3,8 @@ const { useState, useEffect, useRef } = React;
 const PAGE_TITLES = {
   home:"Home", chat:"Chat", news:"Briefing", convs:"History",
   stats:"Stats", memory:"Memory", fitness:"Fitness", remind:"Reminders",
-  projects:"Projects", journal:"Journal", profile:"Profile", models:"Models",
-  calendar:"Calendar",
-  settings:"Settings", calendar:"Calendar",
+  calendar:"Calendar", projects:"Projects", profile:"Profile",
+  models:"Models", settings:"Settings",
 };
 
 const FULL_HEIGHT_PAGES = new Set(["chat","convs","projects","calendar"]);
@@ -15,7 +14,6 @@ function App() {
   const [page,              setPage]               = useState("home");
   const [pageKey,           setPageKey]            = useState(0);
   const [hasActiveDownload, setHasActiveDownload]  = useState(false);
-  // enabledApps: set of app ids currently enabled — drives sidebar visibility
   const [enabledApps,       setEnabledApps]        = useState(null);
 
   useEffect(() => {
@@ -35,8 +33,8 @@ function App() {
       const apps = await api("/api/apps");
       setEnabledApps(new Set(apps.filter(a => a.enabled).map(a => a.nav_id)));
     } catch {
-      // fallback: show all pages
-      setEnabledApps(new Set(["home","chat","news","convs","stats","memory","fitness","remind","calendar","projects","journal","profile","models","settings"]));
+      setEnabledApps(new Set(["home","chat","news","convs","stats","memory","fitness","remind",
+                               "calendar","projects","journal","profile","models","settings"]));
     }
   }
 
@@ -49,12 +47,11 @@ function App() {
   function refresh()         { setPageKey(k => k + 1); }
 
   if (!unlocked) return <LockScreen onUnlock={() => setUnlocked(true)} />;
-  // Wait for app list before rendering so sidebar doesn't flash
   if (!enabledApps) return <div className="page-loading"><Spinner /></div>;
 
   const now  = new Date();
   const time = now.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-  const date = now.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long" });
+  const date = now.toLocaleDateString("en-GB",  { weekday:"long", day:"numeric", month:"long" });
 
   function renderPage() {
     switch (page) {
@@ -70,8 +67,9 @@ function App() {
       case "profile":  return <ProfilePage />;
       case "calendar": return <CalendarPage />;
       case "settings": return <SettingsPage onAppsChanged={loadEnabledApps} />;
-      case "calendar": return <CalendarPage />;
       case "models":   return <ModelsPage onActiveChange={setHasActiveDownload} />;
+      // journal is merged into home — redirect
+      case "journal":  return <HomePage enabledApps={enabledApps} />;
       default:         return <HomePage enabledApps={enabledApps} />;
     }
   }
@@ -90,7 +88,8 @@ function App() {
           <span className="topbar-title">{PAGE_TITLES[page] || page}</span>
           <div className="topbar-right">
             <span className="topbar-date">{date} · {time}</span>
-            <button className="btn btn-ghost btn-sm" onClick={refresh} style={{padding:"2px 7px"}} title="Refresh">↻</button>
+            <button className="btn btn-ghost btn-sm" onClick={refresh}
+                    style={{padding:"2px 7px"}} title="Refresh">↻</button>
           </div>
         </div>
         <div key={`${page}-${pageKey}`} className="page-wrap page-enter"
