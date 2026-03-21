@@ -215,3 +215,77 @@ def get_calendar_context(con: sqlite3.Connection, user: dict) -> str:
             lines.append(f"  • [{ev['level'].upper()}] {ev['title']} — {ev['start_date']}{start_t}{end_t}")
 
     return "\n".join(lines)
+
+
+def get_calendar_context(con: sqlite3.Connection, user: dict) -> str:
+    """
+    Tasks and events for the next N days (configurable in calendar settings).
+    Includes done status so the AI can answer questions like
+    'how many tasks do I have left today?'
+    """
+    from backend.config import load_config
+    cfg          = load_config()
+    cal_cfg      = cfg.get("calendar", {})
+    days_ahead   = int(cal_cfg.get("ai_context_days", 7))
+    p_labels     = cal_cfg.get("priority_labels", {"high":"High","mid":"Medium","low":"Low"})
+
+    today    = datetime.date.today()
+    date_end = (today + datetime.timedelta(days=days_ahead)).isoformat()
+    today_s  = today.isoformat()
+
+    tasks = con.execute(
+        "SELECT title, description, date, start_time, priority, group_id, done "
+        "FROM calendar_tasks WHERE date >= ? AND date <= ? ORDER BY date, priority",
+        (today_s, date_end),
+    ).fetchall()
+
+    events = con.execute(
+        "SELECT title, date, start_time, end_time, priority "
+        "FROM calendar_events WHERE date >= ? AND date <= ? ORDER BY date, start_time",
+        (today_s, date_end),
+    ).fetchall()
+
+    if not tasks and not events:
+        return ""
+
+    def plabel(p):
+        return p_labels.get(p, p.capitalize())
+
+    lines = [f"[CALENDAR — next {days_ahead} days]"]
+
+    # Group tasks by date
+    task_by_date: dict = {}
+    for t in tasks:
+        d = t["date"]
+        task_by_date.setdefault(d, []).append(t)
+
+    for date_str, day_tasks in sorted(task_by_date.items()):
+        d    = datetime.date.fromisoformat(date_str)
+        diff = (d - today).days
+        label = "today" if diff == 0 else "tomorrow" if diff == 1 else date_str
+        lines.append(f"\nTasks — {label}:")
+        done_count = sum(1 for t in day_tasks if t["done"])
+        lines.append(f"  {done_count}/{len(day_tasks)} completed")
+        for t in day_tasks:
+            check = "✓" if t["done"] else "○"
+            time  = f" {t['start_time']}" if t["start_time"] else ""
+            lines.append(f"  {check} [{plabel(t['priority'])}]{time} {safe_decrypt(t['title'])}")
+
+    # Group events by date
+    event_by_date: dict = {}
+    for e in events:
+        event_by_date.setdefault(e["date"], []).append(e)
+
+    for date_str, day_events in sorted(event_by_date.items()):
+        d     = datetime.date.fromisoformat(date_str)
+        diff  = (d - today).days
+        label = "today" if diff == 0 else "tomorrow" if diff == 1 else date_str
+        lines.append(f"\nEvents — {label}:")
+        for e in day_events:
+            overnight = " (overnight)" if e["end_time"] < e["start_time"] else ""
+            lines.append(f"  [{plabel(e['priority'])}] {e['start_time']}–{e['end_time']}{overnight} {safe_decrypt(e['title'])}")
+
+    return "\n".join(lines)
+
+
+CONTEXT_BUILDERS["get_calendar_context"] = get_calendar_context
