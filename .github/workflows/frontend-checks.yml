@@ -13,6 +13,8 @@ on:
 jobs:
   syntax:
     name: Check JSX and JS syntax
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
 
     steps:
