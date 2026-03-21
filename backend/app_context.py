@@ -200,18 +200,22 @@ CONTEXT_BUILDERS: dict[str, callable] = {
 
 def build_app_contexts(
     enabled_app_ids: set[str],
-    _unused_con,          # kept for API compatibility — ignored; we open our own connection
+    con_or_none,
     user: dict,
 ) -> str:
     """
     Calls every enabled app's context builder and joins the results.
-    Opens its own SQLite connection so it is safe to call from any thread
-    (including asyncio thread-pool executors).
+
+    con_or_none behaviour:
+      - None  → opens a fresh connection (safe for asyncio executor threads in production)
+      - other → uses the supplied connection as-is and does NOT close it
+                (used by tests that pass an in-memory fixture DB)
     """
     from backend.app_registry import REGISTRY
     from backend.database import get_connection
 
-    con = get_connection()
+    _own_con = con_or_none is None
+    con = get_connection() if _own_con else con_or_none
     try:
         parts = []
         for app in REGISTRY:
@@ -235,4 +239,5 @@ def build_app_contexts(
                 )
         return "\n\n".join(parts)
     finally:
-        con.close()
+        if _own_con:
+            con.close()
