@@ -1,3 +1,6 @@
+# Maps file path patterns to labels.
+# Labels must exist in the repo first — run the setup-labels workflow.
+
 backend:
   - changed-files:
     - any-glob-to-any-file: "backend/**"
@@ -6,24 +9,20 @@ frontend:
   - changed-files:
     - any-glob-to-any-file: "frontend/**"
 
+ai:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/ai.py"
+      - "backend/routes/chat.py"
+      - "backend/memory.py"
+
 tests:
   - changed-files:
     - any-glob-to-any-file: "tests/**"
 
-installer:
+ci:
   - changed-files:
-    - any-glob-to-any-file:
-      - "install.sh"
-      - "uninstall.sh"
-      - "reset.sh"
-
-dependencies:
-  - changed-files:
-    - any-glob-to-any-file: "requirements.txt"
-
-config:
-  - changed-files:
-    - any-glob-to-any-file: "config*.json"
+    - any-glob-to-any-file: ".github/**"
 
 documentation:
   - changed-files:
@@ -31,3 +30,7 @@ documentation:
       - "README.md"
       - "docs/**"
       - "*.md"
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: "requirements.txt"

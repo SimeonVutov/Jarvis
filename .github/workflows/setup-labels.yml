@@ -1,0 +1,75 @@
+name: Setup Labels
+
+# Run this once manually after creating the repo to create all labels.
+# You can re-run it any time — it is safe to run multiple times.
+on:
+  workflow_dispatch:
+
+jobs:
+  create-labels:
+    name: Create repository labels
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Create labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              // ── Type of change ──────────────────────────────────────────
+              { name: "bug",            color: "d73a4a", description: "Something is broken" },
+              { name: "feature",        color: "0075ca", description: "New functionality added" },
+              { name: "refactor",       color: "e4e669", description: "Code restructure with no behaviour change" },
+              { name: "performance",    color: "0052cc", description: "Improves speed or resource usage" },
+              { name: "security",       color: "ee0701", description: "Security fix or hardening" },
+              { name: "breaking-change",color: "b60205", description: "Changes that break existing behaviour" },
+              // ── Area ────────────────────────────────────────────────────
+              { name: "backend",        color: "1d76db", description: "Changes to the Python server" },
+              { name: "frontend",       color: "0e8a16", description: "Changes to the React dashboard" },
+              { name: "ai",             color: "5319e7", description: "AI model logic, prompts, or context" },
+              { name: "ci",             color: "f9d0c4", description: "CI/CD pipeline changes" },
+              // ── Process ─────────────────────────────────────────────────
+              { name: "tests",          color: "c2e0c6", description: "Tests added or fixed" },
+              { name: "documentation",  color: "0075ca", description: "README or docs updated" },
+              { name: "dependencies",   color: "e4e669", description: "Package or dependency update" },
+              // ── Review state ─────────────────────────────────────────────
+              { name: "needs-review",   color: "fbca04", description: "Waiting for code review" },
+              { name: "work-in-progress", color: "ededed", description: "Not ready to merge yet" },
+              { name: "stale",          color: "ededed", description: "No activity for 14+ days" },
+            ];
+
+            let created = 0;
+            let updated = 0;
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo:  context.repo.repo,
+                  name:  label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+                console.log(`Created: ${label.name}`);
+                created++;
+              } catch (err) {
+                if (err.status === 422) {
+                  // Label already exists — update it
+                  await github.rest.issues.updateLabel({
+                    owner: context.repo.owner,
+                    repo:  context.repo.repo,
+                    name:  label.name,
+                    color: label.color,
+                    description: label.description,
+                  });
+                  console.log(`Updated: ${label.name}`);
+                  updated++;
+                } else {
+                  throw err;
+                }
+              }
+            }
+
+            console.log(`\nDone. ${created} created, ${updated} updated.`);

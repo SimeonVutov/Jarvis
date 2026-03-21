@@ -47,6 +47,32 @@ jobs:
           print(f"\n{len(files)} files — all OK")
           EOF
 
+  ruff:
+    name: Ruff linter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: |
+          # W503 is a flake8 rule that does not exist in Ruff — removed.
+          # E501 = line too long (ignored, not enforced here)
+          # F401 = unused import (too noisy for route modules that re-export)
+          ruff check backend/ server.py jarvis.py \
+            --select E,W,F \
+            --ignore E501,F401 \
+            --output-format github
+
   security:
     name: Security scan (Bandit)
     runs-on: ubuntu-latest
@@ -86,7 +112,7 @@ jobs:
 
       - name: Check required files and directories exist
         run: |
-          python3 << 'EOF'
+          python3 << 'PYEOF'
           import pathlib, sys
 
           required = [
@@ -135,9 +161,13 @@ jobs:
           missing = [f for f in required if not pathlib.Path(f).exists()]
 
           if missing:
-              print("Missing required files:")
+              print(f"Missing {len(missing)} required files:")
               for f in missing: print(f"  ✗  {f}")
+              print()
+              print("If these are new folders (backend/ frontend/) that have not been")
+              print("committed yet, run:")
+              print("  git add backend/ frontend/ && git commit -m 'feat: add modular structure'")
               sys.exit(1)
 
           print(f"All {len(required)} required files present")
-          EOF
+          PYEOF

@@ -16,8 +16,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Auto label
+      - name: Apply labels
         uses: actions/labeler@v5
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
+          # Sync labels — removes labels that no longer match
+          sync-labels: true
