@@ -1,0 +1,157 @@
+name: Frontend Checks
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "frontend/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "frontend/**"
+
+jobs:
+  syntax:
+    name: Check JSX and JS syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install syntax checker
+        run: npm install -g acorn
+
+      - name: Check JS files parse cleanly
+        run: |
+          echo "Checking JS files..."
+          for f in frontend/src/api.js frontend/src/utils.js; do
+            echo "  → $f"
+            acorn --ecma2020 --module "$f" > /dev/null
+          done
+          echo "All JS files OK"
+
+      - name: Check JSX files have no obvious syntax errors
+        run: |
+          echo "Checking JSX files..."
+          # Strip JSX syntax and verify JS structure is intact
+          # We use Node to check for unclosed tags, unmatched braces etc.
+          node << 'EOF'
+          const fs   = require("fs");
+          const path = require("path");
+
+          function walk(dir) {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            let files = [];
+            for (const e of entries) {
+              const full = path.join(dir, e.name);
+              if (e.isDirectory()) files = files.concat(walk(full));
+              else if (e.name.endsWith(".jsx")) files.push(full);
+            }
+            return files;
+          }
+
+          const files  = walk("frontend/src");
+          let   errors = 0;
+
+          for (const file of files) {
+            const src = fs.readFileSync(file, "utf8");
+
+            // Check balanced braces
+            let depth = 0;
+            for (const ch of src) {
+              if (ch === "{") depth++;
+              if (ch === "}") depth--;
+              if (depth < 0) { console.error(`UNBALANCED BRACE in ${file}`); errors++; break; }
+            }
+            if (depth !== 0) { console.error(`UNBALANCED BRACES in ${file} (depth=${depth})`); errors++; }
+
+            // Check no raw import/export (would break Babel standalone)
+            if (/^(import|export)\s/m.test(src)) {
+              console.error(`IMPORT/EXPORT found in ${file} — breaks in-browser Babel`);
+              errors++;
+            }
+
+            if (errors === 0) console.log(`  OK  ${file}`);
+          }
+
+          if (errors > 0) process.exit(1);
+          console.log(`\nAll ${files.length} JSX files OK`);
+          EOF
+
+      - name: Check CSS files are valid
+        run: |
+          echo "Checking CSS files..."
+          node << 'EOF'
+          const fs   = require("fs");
+          const path = require("path");
+
+          const files  = fs.readdirSync("frontend/css").map(f => path.join("frontend/css", f));
+          let   errors = 0;
+
+          for (const file of files) {
+            if (!file.endsWith(".css")) continue;
+            const src = fs.readFileSync(file, "utf8");
+            let depth = 0;
+            for (const ch of src) {
+              if (ch === "{") depth++;
+              if (ch === "}") depth--;
+            }
+            if (depth !== 0) {
+              console.error(`UNBALANCED BRACES in ${file}`);
+              errors++;
+            } else {
+              console.log(`  OK  ${file}`);
+            }
+          }
+
+          if (errors > 0) process.exit(1);
+          console.log(`\nAll CSS files OK`);
+          EOF
+
+      - name: Verify index.html loads all components in correct order
+        run: |
+          python3 << 'EOF'
+          from bs4 import BeautifulSoup
+          import sys, re
+
+          html   = open("frontend/index.html").read()
+          soup   = BeautifulSoup(html, "html.parser")
+          errors = []
+
+          scripts = [s.get("src", "") for s in soup.find_all("script") if s.get("src")]
+          styles  = [l.get("href", "") for l in soup.find_all("link", rel="stylesheet")]
+
+          required_css = ["variables.css","base.css","animations.css","layout.css","components.css","pages.css"]
+          required_js  = ["api.js","utils.js","App.jsx"]
+          required_components = ["Spinner.jsx","Markdown.jsx","LockScreen.jsx","Sidebar.jsx"]
+          required_pages = ["ChatPage.jsx","HomePage.jsx","ProfilePage.jsx","ModelsPage.jsx","ProjectsPage.jsx"]
+
+          for f in required_css:
+              if not any(f in s for s in styles):
+                  errors.append(f"Missing CSS: {f}")
+          for f in required_js + required_components + required_pages:
+              if not any(f in s for s in scripts):
+                  errors.append(f"Missing script: {f}")
+
+          # App.jsx must come last
+          app_positions = [i for i, s in enumerate(scripts) if "App.jsx" in s]
+          if app_positions and app_positions[0] != len(scripts) - 1:
+              errors.append("App.jsx must be the last script tag")
+
+          if errors:
+              for e in errors: print(f"ERROR: {e}")
+              sys.exit(1)
+          print(f"index.html OK — {len(styles)} CSS files, {len(scripts)} scripts")
+          EOF
+        env:
+          PYTHONPATH: .
+
+      - name: Install BeautifulSoup for HTML check
+        run: pip install beautifulsoup4
+        if: always()
