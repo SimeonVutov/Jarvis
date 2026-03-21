@@ -4,6 +4,7 @@ const PAGE_TITLES = {
   home:"Home", chat:"Chat", news:"Briefing", convs:"History",
   stats:"Stats", memory:"Memory", fitness:"Fitness", remind:"Reminders",
   projects:"Projects", journal:"Journal", profile:"Profile", models:"Models",
+  calendar:"Calendar",
   settings:"Settings", calendar:"Calendar",
 };
 
@@ -67,6 +68,7 @@ function App() {
       case "remind":   return <RemindersPage />;
       case "projects": return <ProjectsPage />;
       case "profile":  return <ProfilePage />;
+      case "calendar": return <CalendarPage />;
       case "settings": return <SettingsPage onAppsChanged={loadEnabledApps} />;
       case "calendar": return <CalendarPage />;
       case "models":   return <ModelsPage onActiveChange={setHasActiveDownload} />;

@@ -10,6 +10,7 @@ const ALL_NAV_ITEMS = [
   { id:"memory",   icon:"◎",  label:"Memory",    alwaysShow:true },
   { id:"fitness",  icon:"♦",  label:"Fitness",   alwaysShow:false },
   { id:"remind",   icon:"◌",  label:"Reminders", alwaysShow:false },
+  { id:"calendar",  icon:"◫",  label:"Calendar",  alwaysShow:false },
   { id:"projects", icon:"◧",  label:"Projects",  alwaysShow:false },
   { id:"journal",  icon:"◩",  label:"Journal",   alwaysShow:false },
   { id:"calendar", icon:"◰",  label:"Calendar",  alwaysShow:false },
