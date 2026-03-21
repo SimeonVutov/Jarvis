@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   # ── Step 1: full verification — must pass before release ────────
   verify:
