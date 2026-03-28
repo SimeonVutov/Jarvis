@@ -1,7 +1,7 @@
 // Pure helpers — global scope, no ES modules
 
 const daysUntil = d =>
-  Math.round((new Date(d) - new Date(new Date().toDateString())) / 86_400_000);
+  Math.round((new Date(d) - new Date(new Date().toDateString())) / 86400000);
 
 const fmtSize = b => b ? (b / 1e9).toFixed(1) + " GB" : "—";
 
@@ -49,3 +49,11 @@ const POPULAR_MODELS = [
   { name:"deepseek-r1:14b",     desc:"DeepSeek R1 14B — deep reasoning",        size:"9 GB",   cat:"study"   },
   { name:"nomic-embed-text",    desc:"Nomic Embed — required for memory",       size:"270 MB", cat:"embed"   },
 ];
+
+const timeAgo = isoStr => {
+  const diff = (Date.now() - new Date(isoStr)) / 1000;
+  if (diff <    60) return "just now";
+  if (diff <  3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+};

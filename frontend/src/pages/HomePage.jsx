@@ -1,31 +1,5 @@
 const { useState, useEffect, useRef } = React;
 
-function weatherIcon(desc = "") {
-  const d = desc.toLowerCase();
-  if (d.includes("thunder"))                         return "⛈";
-  if (d.includes("snow"))                            return "❄️";
-  if (d.includes("sleet") || d.includes("drizzle")) return "🌦";
-  if (d.includes("rain"))                            return "🌧";
-  if (d.includes("cloud"))                           return "☁️";
-  if (d.includes("fog")  || d.includes("mist"))     return "🌫";
-  if (d.includes("overcast"))                        return "🌥";
-  return "☀️";
-}
-
-function daysUntil(dateStr) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const tgt   = new Date(dateStr + "T00:00:00"); tgt.setHours(0,0,0,0);
-  return Math.round((tgt - today) / 86400000);
-}
-
-function timeAgo(isoStr) {
-  const diff = (Date.now() - new Date(isoStr)) / 1000;
-  if (diff <    60) return "just now";
-  if (diff <  3600) return `${Math.floor(diff/60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-  return `${Math.floor(diff/86400)}d ago`;
-}
-
 function HomePage({ enabledApps }) {
   const [dashData,     setDashData]     = useState(null);
   const [weather,      setWeather]      = useState(null);
