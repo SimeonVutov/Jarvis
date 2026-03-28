@@ -91,9 +91,9 @@
   outline-offset: -2px;
   box-shadow: 0 0 0 4px rgba(0,200,240,.12);
 }
-.widget-cell.dragging {
-  opacity: 0.35;
-}
+.widget-cell.dragging    { opacity: 0.35; }
+/* Dim all cells while dragging from palette so overlay is readable */
+.widget-grid:has(.dragging) .widget-cell:not(.dragging) { opacity: 0.7; }
 /* dim all cells when dragging from palette */
 .widget-grid.palette-drag .widget-cell {
   opacity: 0.55;

@@ -1,153 +1,144 @@
-// HomePage.jsx — Customizable widget grid with drag/drop, resize, and live grid overlay
-// Grid overlay shows occupied cells (red) and valid drop zones (green/red based on fit)
-// during any drag operation.
+// HomePage.jsx — Customizable widget grid
+// Grid overlay uses onDragEnter on each cell slot — works correctly with HTML5 drag API
+// (mousemove does NOT fire during drag, so we use drag events on the slots themselves)
 
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-// ── Compute where CSS auto-flow places each widget ──────────────────────────
-// Returns array of { ...item, gridRow, gridCol } (0-indexed)
-function computeGridPositions(layout) {
-  const COLS = 12;
-  const occupied = {};  // "r,c" → true
+const COLS      = 12;
+const SLOT_ROWS = 10;  // rows of ghost slots to render
 
-  function isFree(row, col, cols, rows) {
-    if (col + cols > COLS) return false;
-    for (let r = row; r < row + rows; r++)
-      for (let c = col; c < col + cols; c++)
-        if (occupied[`${r},${c}`]) return false;
-    return true;
-  }
-
-  function occupy(row, col, cols, rows) {
-    for (let r = row; r < row + rows; r++)
-      for (let c = col; c < col + cols; c++)
-        occupied[`${r},${c}`] = true;
-  }
-
-  const result = [];
-  let cursorRow = 0, cursorCol = 0;
+// ── Compute which (row,col) each widget occupies ────────────────────
+function buildOccupiedSet(layout) {
+  const occupied = new Set();
+  const placed   = [];
+  let curR = 0, curC = 0;
 
   for (const item of layout) {
-    const { cols = 4, rows = 1 } = item;
-    let placed = false;
+    const cols = item.cols || 4;
+    const rows = item.rows || 1;
+    let found  = false;
 
     outer:
-    for (let row = cursorRow; row < cursorRow + 200; row++) {
-      const startCol = row === cursorRow ? cursorCol : 0;
-      for (let col = startCol; col <= COLS - cols; col++) {
-        if (isFree(row, col, cols, rows)) {
-          result.push({ ...item, gridRow: row, gridCol: col });
-          occupy(row, col, cols, rows);
-          cursorRow = row;
-          cursorCol = col + cols;
-          if (cursorCol >= COLS) { cursorRow++; cursorCol = 0; }
-          placed = true;
+    for (let r = curR; r < curR + 200; r++) {
+      const startC = r === curR ? curC : 0;
+      for (let c = startC; c <= COLS - cols; c++) {
+        let free = true;
+        for (let dr = 0; dr < rows && free; dr++)
+          for (let dc = 0; dc < cols && free; dc++)
+            if (occupied.has(`${r+dr},${c+dc}`)) free = false;
+        if (free) {
+          placed.push({ ...item, gridR: r, gridC: c });
+          for (let dr = 0; dr < rows; dr++)
+            for (let dc = 0; dc < cols; dc++)
+              occupied.add(`${r+dr},${c+dc}`);
+          curR = r; curC = c + cols;
+          if (curC >= COLS) { curR++; curC = 0; }
+          found = true;
           break outer;
         }
       }
-      cursorRow = row + 1; cursorCol = 0;
+      curR = r + 1; curC = 0;
     }
-    if (!placed) result.push({ ...item, gridRow: 0, gridCol: 0 });
+    if (!found) placed.push({ ...item, gridR: 0, gridC: 0 });
   }
-
-  return result;
+  return { occupiedSet: occupied, placed };
 }
 
-// ── Grid overlay ─────────────────────────────────────────────────────────────
-function GridOverlay({ layout, dragSize, gridWrapRef }) {
-  const [hover, setHover] = useState(null);  // { row, col }
+// ── Grid slot overlay — cells are real drag targets ──────────────────
+// Each 1×1 slot has onDragEnter; we track which slot is hovered and
+// highlight the widget footprint (green=fits, red=blocked).
+function GridOverlay({ layout, dragCols, dragRows }) {
+  const [hoverCell, setHoverCell] = useState(null);  // {r, c}
 
-  const COLS = 12;
-  const VISIBLE_ROWS = 8;
-  const ROW_H = 152;  // 140px row + 12px gap
-  const COL_W_FRAC = 1 / 12;
+  const { occupiedSet } = useMemo(() => buildOccupiedSet(layout || []), [layout]);
 
-  const positions = useMemo(() => computeGridPositions(layout || []), [layout]);
-
-  const occupiedSet = useMemo(() => {
-    const s = new Set();
-    positions.forEach(({ gridRow, gridCol, cols = 4, rows = 1 }) => {
-      for (let r = gridRow; r < gridRow + rows; r++)
-        for (let c = gridCol; c < gridCol + cols; c++)
-          s.add(`${r},${c}`);
-    });
-    return s;
-  }, [positions]);
-
-  function fitsAt(row, col) {
-    if (!dragSize) return true;
-    if (col + dragSize.cols > COLS) return false;
-    for (let r = row; r < row + dragSize.rows; r++)
-      for (let c = col; c < col + dragSize.cols; c++)
-        if (occupiedSet.has(`${r},${c}`)) return false;
+  function fitsAt(r, c) {
+    if (c + dragCols > COLS) return false;
+    for (let dr = 0; dr < dragRows; dr++)
+      for (let dc = 0; dc < dragCols; dc++)
+        if (occupiedSet.has(`${r+dr},${c+dc}`)) return false;
     return true;
   }
 
-  useEffect(() => {
-    function onMove(e) {
-      if (!gridWrapRef.current) return;
-      const rect   = gridWrapRef.current.getBoundingClientRect();
-      const padding = 16;
-      const gap     = 12;
-      const gw      = rect.width - padding * 2;
-      const colW    = (gw - gap * (COLS - 1)) / COLS;
-      const scrollY = gridWrapRef.current.scrollTop;
-
-      const x = e.clientX - rect.left - padding;
-      const y = e.clientY - rect.top  + scrollY;
-
-      const col = Math.max(0, Math.min(COLS - 1, Math.floor(x / (colW + gap))));
-      const row = Math.max(0, Math.floor(y / ROW_H));
-      setHover({ col, row });
-    }
-
-    document.addEventListener("mousemove", onMove);
-    return () => document.removeEventListener("mousemove", onMove);
-  }, [gridWrapRef]);
+  const ok = hoverCell ? fitsAt(hoverCell.r, hoverCell.c) : null;
 
   const cells = [];
-  for (let r = 0; r < VISIBLE_ROWS; r++) {
+  for (let r = 0; r < SLOT_ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const key = `${r},${c}`;
-      const isOcc = occupiedSet.has(key);
+      const isOcc = occupiedSet.has(`${r},${c}`);
 
-      let cellClass = "grid-overlay-cell";
-      if (hover && dragSize) {
-        const inFootprint =
-          r >= hover.row && r < hover.row + dragSize.rows &&
-          c >= hover.col && c < hover.col + dragSize.cols;
-        if (inFootprint) {
-          cellClass += fitsAt(hover.row, hover.col) ? " cell-hover-ok" : " cell-hover-bad";
+      let bg = "rgba(0,200,240,.025)";
+      let border = "1px dashed rgba(0,200,240,.15)";
+
+      if (hoverCell) {
+        const inFP = r >= hoverCell.r && r < hoverCell.r + dragRows &&
+                     c >= hoverCell.c && c < hoverCell.c + dragCols;
+        if (inFP) {
+          bg     = ok ? "rgba(0,200,240,.18)"  : "rgba(240,64,96,.2)";
+          border = ok ? "1px solid rgba(0,200,240,.6)" : "1px solid rgba(240,64,96,.5)";
         } else if (isOcc) {
-          cellClass += " cell-occupied";
+          bg     = "rgba(240,64,96,.07)";
+          border = "1px dashed rgba(240,64,96,.2)";
         }
       } else if (isOcc) {
-        cellClass += " cell-occupied";
+        bg     = "rgba(240,64,96,.05)";
+        border = "1px dashed rgba(240,64,96,.15)";
       }
 
       cells.push(
-        <div key={key} className={cellClass} style={{ gridColumn: "span 1", gridRow: "span 1" }} />
+        <div
+          key={`${r}-${c}`}
+          style={{
+            gridColumn: "span 1",
+            gridRow:    "span 1",
+            borderRadius: 8,
+            background: bg,
+            border,
+            transition: "background .08s, border-color .08s",
+            cursor: "crosshair",
+          }}
+          onDragEnter={e => { e.preventDefault(); setHoverCell({ r, c }); }}
+          onDragOver={e  => { e.preventDefault(); }}
+          onDragLeave={e => {
+            // Only clear if truly leaving the overlay (not just crossing between cells)
+            if (!e.currentTarget.parentElement?.contains(e.relatedTarget)) {
+              setHoverCell(null);
+            }
+          }}
+        />
       );
     }
   }
 
   return (
-    <div className="grid-overlay" style={{ height: `${VISIBLE_ROWS * ROW_H}px` }}>
-      {cells}
+    <div
+      style={{
+        position: "absolute",
+        top: 0, left: 0, right: 0,
+        display: "grid",
+        gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+        gridAutoRows: "140px",
+        gap: 12,
+        padding: "0 16px",
+        zIndex: 4,
+        pointerEvents: "none",
+      }}
+      onDragLeave={() => setHoverCell(null)}
+    >
+      {cells.map(c => React.cloneElement(c, { style: { ...c.props.style, pointerEvents: "all" } }))}
     </div>
   );
 }
 
-// ── HomePage ──────────────────────────────────────────────────────────────────
+// ── HomePage ──────────────────────────────────────────────────────────
 function HomePage({ enabledApps }) {
   const [layout,      setLayout]      = useState(null);
   const [editMode,    setEditMode]    = useState(false);
   const [dragSrcIdx,  setDragSrcIdx]  = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
-  const [palDrag,     setPalDrag]     = useState(null);   // widgetId from palette
-  const [dragSize,    setDragSize]    = useState(null);   // { cols, rows } of active drag
+  const [palDrag,     setPalDrag]     = useState(null);
+  const [dragSize,    setDragSize]    = useState(null);
   const [sizeOf,      setSizeOf]      = useState(null);
-  const gridWrapRef = useRef(null);
 
   useEffect(() => {
     api("/api/home/layout")
@@ -157,22 +148,19 @@ function HomePage({ enabledApps }) {
 
   useEffect(() => {
     function close(e) {
-      if (!e.target.closest(".size-popover") && !e.target.closest(".widget-bar-btn")) {
-        setSizeOf(null);
-      }
+      if (!e.target.closest?.(".size-popover")) setSizeOf(null);
     }
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, []);
 
-  // Clear drag state when drag ends anywhere
   useEffect(() => {
-    function onDragEnd() {
+    function onEnd() {
       setDragSrcIdx(null); setDragOverIdx(null);
-      setPalDrag(null); setDragSize(null);
+      setPalDrag(null);    setDragSize(null);
     }
-    document.addEventListener("dragend", onDragEnd);
-    return () => document.removeEventListener("dragend", onDragEnd);
+    document.addEventListener("dragend", onEnd);
+    return () => document.removeEventListener("dragend", onEnd);
   }, []);
 
   function persist(nl) {
@@ -191,26 +179,19 @@ function HomePage({ enabledApps }) {
     }]);
   }
 
-  function removeWidget(iid) {
-    persist((layout || []).filter(w => w.instanceId !== iid));
-  }
+  function removeWidget(iid) { persist((layout || []).filter(w => w.instanceId !== iid)); }
 
   function resizeWidget(iid, cols, rows) {
     persist((layout || []).map(w => w.instanceId === iid ? { ...w, cols, rows } : w));
     setSizeOf(null);
   }
 
-  // ── Grid drag (reorder) ────────────────────────────────────────────
   function gDragStart(e, idx, item) {
     setDragSrcIdx(idx);
     setDragSize({ cols: item.cols, rows: item.rows });
     e.dataTransfer.effectAllowed = "move";
   }
-  function gDragOver(e, idx) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverIdx(idx);
-  }
+  function gDragOver(e, idx) { e.preventDefault(); setDragOverIdx(idx); }
   function gDrop(e, idx) {
     e.preventDefault();
     if (dragSrcIdx !== null && dragSrcIdx !== idx) {
@@ -222,10 +203,8 @@ function HomePage({ enabledApps }) {
       addWidget(palDrag);
     }
     setDragSrcIdx(null); setDragOverIdx(null);
-    setPalDrag(null); setDragSize(null);
+    setPalDrag(null);    setDragSize(null);
   }
-
-  // ── Palette drag (add) ─────────────────────────────────────────────
   function pDragStart(e, widgetId) {
     const def = WIDGET_REGISTRY.find(w => w.id === widgetId);
     setPalDrag(widgetId);
@@ -243,41 +222,38 @@ function HomePage({ enabledApps }) {
 
   return (
     <div className="home-root">
-      {/* ── Top bar ── */}
+      {/* Top bar */}
       <div className="home-topbar">
         {editMode && (
-          <span style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)" }}>
+          <span style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>
             Drag to reorder · drag from library to add · × to remove
           </span>
         )}
         <button
-          className={`btn ${editMode ? "btn-primary" : "btn-ghost"} btn-sm`}
+          className={`btn ${editMode?"btn-primary":"btn-ghost"} btn-sm`}
           onClick={e => { e.stopPropagation(); setEditMode(m => !m); setSizeOf(null); }}
         >
           {editMode ? "✓ Done editing" : "⊞ Customize"}
         </button>
       </div>
 
-      {/* ── Body ── */}
+      {/* Body */}
       <div className="home-body">
+        <div className="widget-grid-wrap">
 
-        {/* ── Grid wrap (scrollable, relative for overlay) ── */}
-        <div
-          ref={gridWrapRef}
-          className="widget-grid-wrap"
-        >
-          {/* Grid overlay — visible during any drag */}
-          {isDragging && (
+          {/* Grid overlay — only shown while dragging */}
+          {isDragging && dragSize && (
             <GridOverlay
               layout={layout}
-              dragSize={dragSize}
-              gridWrapRef={gridWrapRef}
+              dragCols={dragSize.cols}
+              dragRows={dragSize.rows}
             />
           )}
 
           {/* Widget grid */}
           <div
-            className={["widget-grid", palDrag ? "palette-drag" : ""].filter(Boolean).join(" ")}
+            className="widget-grid"
+            style={{ position: "relative", zIndex: 10 }}
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
               e.preventDefault();
@@ -296,60 +272,46 @@ function HomePage({ enabledApps }) {
                     "widget-cell",
                     dragOverIdx === idx ? "drag-over" : "",
                     dragSrcIdx  === idx ? "dragging"  : "",
+                    isDragging           ? "in-drag-mode" : "",
                   ].filter(Boolean).join(" ")}
-                  style={{
-                    gridColumn: `span ${item.cols}`,
-                    gridRow:    `span ${item.rows}`,
-                    zIndex: isDragging ? 10 : undefined,
-                  }}
+                  style={{ gridColumn:`span ${item.cols}`, gridRow:`span ${item.rows}` }}
                   draggable={editMode}
                   onDragStart={e => { e.stopPropagation(); gDragStart(e, idx, item); }}
                   onDragOver={e  => { e.stopPropagation(); gDragOver(e, idx); }}
                   onDrop={e      => { e.stopPropagation(); gDrop(e, idx); }}
                 >
-                  {/* Edit bar */}
                   {editMode && (
                     <div className="widget-bar" onClick={e => e.stopPropagation()}>
                       <span className="widget-drag-handle" title="Drag to reorder">⠿</span>
                       <span className="widget-bar-name">{def.name}</span>
                       <div className="widget-bar-actions">
-                        {/* Size picker */}
-                        <div style={{ position: "relative" }}>
+                        <div style={{ position:"relative" }}>
                           <button
                             className="widget-bar-btn"
-                            title="Resize"
                             onClick={e => {
                               e.stopPropagation();
                               setSizeOf(s => s === item.instanceId ? null : item.instanceId);
                             }}
-                          >
-                            {item.cols}×{item.rows}
-                          </button>
+                          >{item.cols}×{item.rows}</button>
                           {sizeOf === item.instanceId && (
                             <div className="size-popover" onClick={e => e.stopPropagation()}>
                               {def.sizes.map(s => (
                                 <button
                                   key={`${s.cols}x${s.rows}`}
-                                  className={`size-opt${s.cols === item.cols && s.rows === item.rows ? " size-active" : ""}`}
+                                  className={`size-opt${s.cols===item.cols&&s.rows===item.rows?" size-active":""}`}
                                   onClick={() => resizeWidget(item.instanceId, s.cols, s.rows)}
                                 >
-                                  <span style={{ fontFamily: "var(--mono)" }}>{s.cols}×{s.rows}</span>
+                                  <span style={{fontFamily:"var(--mono)"}}>{s.cols}×{s.rows}</span>
                                   <span>{s.label}</span>
                                 </button>
                               ))}
                             </div>
                           )}
                         </div>
-                        <button
-                          className="widget-bar-btn widget-remove"
-                          title="Remove"
-                          onClick={() => removeWidget(item.instanceId)}
-                        >×</button>
+                        <button className="widget-bar-btn widget-remove" onClick={() => removeWidget(item.instanceId)}>×</button>
                       </div>
                     </div>
                   )}
-
-                  {/* Content */}
                   <div className="widget-content">
                     <Comp cols={item.cols} rows={item.rows} enabledApps={enabledApps} />
                   </div>
@@ -358,14 +320,14 @@ function HomePage({ enabledApps }) {
             })}
 
             {layout.length === 0 && (
-              <div style={{ gridColumn: "span 12", textAlign: "center", padding: 48, color: "var(--text3)", fontSize: 13 }}>
-                No widgets yet. Click <strong style={{ color: "var(--text)" }}>⊞ Customize</strong> to add some.
+              <div style={{ gridColumn:"span 12", textAlign:"center", padding:48, color:"var(--text3)", fontSize:13 }}>
+                No widgets yet. Click <strong style={{color:"var(--text)"}}>⊞ Customize</strong> to add some.
               </div>
             )}
           </div>
         </div>
 
-        {/* ── Palette panel ── */}
+        {/* Palette */}
         {editMode && (
           <div className="widget-panel" onClick={e => e.stopPropagation()}>
             <div className="widget-panel-head">Widget Library</div>
@@ -382,31 +344,29 @@ function HomePage({ enabledApps }) {
                   >
                     <div className="palette-preview">
                       {Comp
-                        ? <Comp cols={def.defaultCols} rows={Math.min(def.defaultRows, 2)} preview enabledApps={enabledApps} />
-                        : <div style={{ padding: 12, fontSize: 24 }}>{def.icon}</div>
+                        ? <Comp cols={def.defaultCols} rows={Math.min(def.defaultRows,2)} preview enabledApps={enabledApps} />
+                        : <div style={{padding:12,fontSize:24}}>{def.icon}</div>
                       }
                     </div>
                     <div className="palette-info">
                       <div className="palette-name">{def.icon} {def.name}</div>
                       <div className="palette-desc">{def.description}</div>
                       <div className="palette-sizes">
-                        {def.sizes.map(s => (
+                        {def.sizes.map(s=>(
                           <span key={`${s.cols}x${s.rows}`} className="palette-size-tag">{s.cols}×{s.rows}</span>
                         ))}
                       </div>
                       <button
                         className="btn btn-primary btn-sm"
-                        style={{ width: "100%", justifyContent: "center", marginTop: 4 }}
+                        style={{ width:"100%", justifyContent:"center", marginTop:4 }}
                         onClick={() => addWidget(def.id)}
-                      >
-                        + Add to home
-                      </button>
+                      >+ Add to home</button>
                     </div>
                   </div>
                 );
               })}
               {availableWidgets.length === 0 && (
-                <div style={{ color: "var(--text3)", fontSize: 11, fontFamily: "var(--mono)", padding: 8 }}>
+                <div style={{color:"var(--text3)",fontSize:11,fontFamily:"var(--mono)",padding:8}}>
                   Enable apps in Settings to unlock more widgets.
                 </div>
               )}
