@@ -4,7 +4,7 @@ import ollama
 from fastapi import APIRouter, HTTPException
 import httpx
 from backend import state
-from backend.config import load_config
+from backend.config import load_config, save_config
 from backend.app_registry import REGISTRY
 from backend.database import get_connection
 from backend.crypto import safe_decrypt
