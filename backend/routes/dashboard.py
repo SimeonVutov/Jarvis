@@ -146,3 +146,21 @@ async def weather():
             }
         except Exception as e:
             return {"error": str(e), "city": city}
+
+
+@router.get("/api/home/layout")
+async def get_home_layout():
+    """Return the saved widget layout for the home page."""
+    _require_auth()
+    cfg = load_config()
+    return {"layout": cfg.get("home_layout", [])}
+
+
+@router.put("/api/home/layout")
+async def set_home_layout(body: dict):
+    """Save the widget layout for the home page to config.json."""
+    _require_auth()
+    cfg = load_config()
+    cfg["home_layout"] = body.get("layout", [])
+    save_config(cfg)
+    return {"layout": cfg["home_layout"]}
