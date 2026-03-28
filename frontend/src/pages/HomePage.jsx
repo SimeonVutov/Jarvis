@@ -1,253 +1,219 @@
+// HomePage.jsx — Customizable widget-based home page
+// Requires globals from: api.js, utils.js, widgets.js, Widgets.jsx
+// Layout is persisted to config.json via /api/home/layout
+
 const { useState, useEffect, useRef } = React;
 
 function HomePage({ enabledApps }) {
-  const [dashData,     setDashData]     = useState(null);
-  const [weather,      setWeather]      = useState(null);
-  const [greeting,     setGreeting]     = useState("");
-  const [greetLoading, setGreetLoading] = useState(true);
-  const [newsSnippets, setNewsSnippets] = useState([]);
-
-  // Journal state
-  const [entries,      setEntries]      = useState([]);
-  const [draft,        setDraft]        = useState("");
-  const [posting,      setPosting]      = useState(false);
-  const [expanded,     setExpanded]     = useState(null); // id of expanded entry
-  const textRef = useRef(null);
+  const [layout,     setLayout]     = useState(null);   // null = loading
+  const [editMode,   setEditMode]   = useState(false);
+  const [dragSrcIdx, setDragSrcIdx] = useState(null);   // grid reorder source index
+  const [dragOverIdx,setDragOverIdx]= useState(null);
+  const [palDrag,    setPalDrag]    = useState(null);   // widgetId dragged from palette
+  const [sizeOf,     setSizeOf]     = useState(null);   // instanceId with size popover open
 
   useEffect(() => {
-    api("/api/dashboard").then(setDashData).catch(() => {});
-    api("/api/weather").then(setWeather).catch(() => {});
-    api("/api/home/greeting")
-      .then(d => { setGreeting(d.greeting || ""); setGreetLoading(false); })
-      .catch(() => setGreetLoading(false));
-    api("/api/news").then(news => {
-      const items = [];
-      Object.values(news).forEach(feeds =>
-        Object.values(feeds).forEach(f => {
-          if (f.items?.length) items.push({ src: f.name, title: f.items[0].title, link: f.items[0].link });
-        })
-      );
-      setNewsSnippets(items.slice(0, 3));
-    }).catch(() => {});
-    loadEntries();
+    api("/api/home/layout")
+      .then(d => setLayout(d.layout?.length ? d.layout : [...DEFAULT_LAYOUT]))
+      .catch(() => setLayout([...DEFAULT_LAYOUT]));
   }, []);
 
-  async function loadEntries() {
-    const rows = await api("/api/journal?limit=20").catch(() => []);
-    setEntries(rows);
+  // Close size popover on outside click
+  useEffect(() => {
+    function close() { setSizeOf(null); }
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, []);
+
+  function persist(nl) {
+    setLayout(nl);
+    jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
   }
 
-  async function submitEntry() {
-    const text = draft.trim();
-    if (!text) return;
-    setPosting(true);
-    await jsonPost("/api/journal", { content: text }).catch(() => {});
-    setDraft("");
-    setPosting(false);
-    loadEntries();
+  function addWidget(widgetId) {
+    const def = WIDGET_REGISTRY.find(w => w.id === widgetId);
+    if (!def) return;
+    persist([...(layout||[]), {
+      instanceId: `w${Date.now()}`,
+      widgetId,
+      cols: def.defaultCols,
+      rows: def.defaultRows,
+    }]);
   }
 
-  async function deleteEntry(id) {
-    if (!confirm("Delete this entry?")) return;
-    await httpDel(`/api/journal/${id}`).catch(() => {});
-    setEntries(e => e.filter(x => x.id !== id));
+  function removeWidget(iid) {
+    persist((layout||[]).filter(w => w.instanceId !== iid));
   }
 
-  function handleKey(e) {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEntry();
+  function resizeWidget(iid, cols, rows) {
+    persist((layout||[]).map(w => w.instanceId === iid ? { ...w, cols, rows } : w));
+    setSizeOf(null);
   }
 
-  if (!dashData) return <PageLoading />;
-
-  const { fitness, reminders = [], weekday, date: dateStr, user_name, period } = dashData;
-  const ft = fitness?.today;
-  const fy = fitness?.yesterday;
-
-  const fitnessEnabled   = !enabledApps || enabledApps.has("fitness");
-  const remindersEnabled = !enabledApps || enabledApps.has("remind");
-  const newsEnabled      = !enabledApps || enabledApps.has("news");
-  const journalEnabled   = !enabledApps || enabledApps.has("journal");
-
-  const chips = [];
-  if (weather && !weather.error)
-    chips.push({ icon: weatherIcon(weather.desc), text: `${weather.temp_c}° · ${weather.desc}` });
-  if (fitnessEnabled) {
-    if (ft?.workout)      chips.push({ icon: "🏋️", text: ft.workout });
-    else if (fy?.workout) chips.push({ icon: "🏋️", text: `Yesterday: ${fy.workout}` });
-    if (ft?.calories)     chips.push({ icon: "🔥", text: `${ft.calories} kcal` });
+  // ── Grid drag-to-reorder ───────────────────────────────────────────
+  function gDragStart(e, idx) { setDragSrcIdx(idx); e.dataTransfer.effectAllowed = "move"; }
+  function gDragOver(e, idx)  { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverIdx(idx); }
+  function gDrop(e, idx) {
+    e.preventDefault();
+    if (dragSrcIdx !== null && dragSrcIdx !== idx) {
+      const nl = [...(layout||[])];
+      const [itm] = nl.splice(dragSrcIdx, 1);
+      nl.splice(idx, 0, itm);
+      persist(nl);
+    } else if (palDrag) {
+      addWidget(palDrag);
+    }
+    setDragSrcIdx(null); setDragOverIdx(null); setPalDrag(null);
   }
-  if (remindersEnabled && reminders.length > 0) {
-    const r = reminders[0];
-    const d = daysUntil(r.due_date);
-    chips.push({ icon: "📅", text: `${d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d}d`}: ${r.title}` });
-  }
+  function gDragEnd() { setDragSrcIdx(null); setDragOverIdx(null); }
+
+  // ── Palette drag-to-add ────────────────────────────────────────────
+  function pDragStart(e, widgetId) { setPalDrag(widgetId); e.dataTransfer.effectAllowed = "copy"; }
+
+  if (!layout) return <PageLoading />;
+
+  const availableWidgets = WIDGET_REGISTRY.filter(def =>
+    !def.app || !enabledApps || enabledApps.has(def.app)
+  );
 
   return (
-    <div className="pad">
-
-      {/* Hero greeting */}
-      <div className="home-hero">
-        <div className="hero-date">{weekday}, {dateStr}</div>
-        <div className={`hero-greeting${greetLoading ? " loading" : ""}`}>
-          {greetLoading
-            ? <><Spinner size={12} style={{ verticalAlign:"middle", marginRight:8 }} /> Thinking…</>
-            : greeting || `Good ${period || "day"}, ${user_name}.`
-          }
-        </div>
-        {chips.length > 0 && (
-          <div className="hero-chips">
-            {chips.map((c, i) => (
-              <div key={i} className="hero-chip" style={{ animationDelay:`${i * 0.06}s` }}>
-                <span>{c.icon}</span><span>{c.text}</span>
-              </div>
-            ))}
-          </div>
+    <div className="home-root">
+      {/* ── Top bar ── */}
+      <div className="home-topbar">
+        {editMode && (
+          <span style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>
+            Drag widgets to reorder · drag from library to add · click × to remove
+          </span>
         )}
+        <button
+          className={`btn ${editMode ? "btn-primary" : "btn-ghost"} btn-sm`}
+          onClick={e => { e.stopPropagation(); setEditMode(m => !m); setSizeOf(null); }}
+        >
+          {editMode ? "✓ Done editing" : "⊞ Customize"}
+        </button>
       </div>
 
-      {/* Info grid */}
-      <div className="home-grid">
-        {/* Weather */}
-        <div className="card">
-          <div className="card-title">Weather — {weather?.city || "…"}</div>
-          {weather && !weather.error ? (
-            <>
-              <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:10 }}>
-                <div className="weather-temp">{weather.temp_c}°</div>
-                <div>
-                  <div className="weather-desc">{weatherIcon(weather.desc)} {weather.desc}</div>
-                  <div className="weather-sub">Feels {weather.feels_like}° · {weather.humidity}% · {weather.wind_kmph} km/h</div>
-                  <div className="weather-sub">↑{weather.max_c}° ↓{weather.min_c}°</div>
-                </div>
-              </div>
-              <div className="hourly-list">
-                {(weather.hourly || []).map((h, i) => (
-                  <div key={i} className="hourly-item">
-                    <div className="hourly-time">{String(h.time).padStart(4,"0").replace(/(\d{2})(\d{2})/,"$1:$2")}</div>
-                    <div className="hourly-temp">{h.temp}°</div>
-                    <div>{weatherIcon(h.desc)}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="no-data">Weather unavailable</div>
-          )}
-        </div>
+      {/* ── Body ── */}
+      <div className="home-body">
 
-        {/* Reminders */}
-        {remindersEnabled && (
-          <div className="card">
-            <div className="card-title">Upcoming</div>
-            {reminders.length === 0 && <div className="no-data">No upcoming reminders</div>}
-            {reminders.map(r => {
-              const d   = daysUntil(r.due_date);
-              const cls = d <= 1 ? "urgent" : d <= 3 ? "soon" : "";
-              const when = d === 0 ? "TODAY" : d === 1 ? "Tomorrow" : `In ${d}d`;
-              return (
-                <div key={r.id} className={`reminder-item ${cls}`}>
-                  <span className="reminder-when">{when}</span>
-                  <span className="reminder-title">{r.title}</span>
-                  <button className="reminder-done" onClick={async () => {
-                    await jsonPatch(`/api/reminders/${r.id}/done`);
-                    setDashData(d => d ? { ...d, reminders: d.reminders.filter(x => x.id !== r.id) } : d);
-                  }}>✓</button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* ── Widget grid ── */}
+        <div
+          className="widget-grid"
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); if (palDrag) { addWidget(palDrag); setPalDrag(null); } }}
+        >
+          {layout.map((item, idx) => {
+            const def  = WIDGET_REGISTRY.find(w => w.id === item.widgetId);
+            const Comp = WIDGET_COMPONENTS[item.widgetId];
+            if (!def || !Comp) return null;
 
-        {/* Top news */}
-        {newsEnabled && (
-          <div className="card">
-            <div className="card-title">Top stories</div>
-            {newsSnippets.length === 0 && <div className="no-data">No news sources configured</div>}
-            {newsSnippets.map((n, i) => (
-              <div key={i} style={{ padding:"6px 0", borderBottom:"1px solid rgba(26,45,74,.4)" }}>
-                <div style={{ fontSize:10, color:"var(--cyan)", fontFamily:"var(--mono)", marginBottom:2 }}>{n.src}</div>
-                <a href={n.link || "#"} target="_blank" rel="noreferrer"
-                   style={{ fontSize:12, color:"var(--text)", textDecoration:"none", lineHeight:1.4, display:"block" }}>
-                  {n.title}
-                </a>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Journal — merged into home */}
-      {journalEnabled && (
-        <div style={{ marginTop:24 }}>
-          <div style={{ fontSize:11, color:"var(--text3)", fontFamily:"var(--mono)", letterSpacing:1,
-                        textTransform:"uppercase", marginBottom:10 }}>Personal Notes</div>
-
-          {/* Write box */}
-          <div className="card" style={{ marginBottom:14 }}>
-            <textarea
-              ref={textRef}
-              className="input"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="Write a note, thought, or log… (Ctrl+Enter to save)"
-              rows={3}
-              style={{ width:"100%", resize:"vertical", marginBottom:8, fontFamily:"var(--mono)", fontSize:12 }}
-            />
-            <div style={{ display:"flex", justifyContent:"flex-end", gap:8 }}>
-              {draft && (
-                <button className="btn btn-ghost btn-sm" onClick={() => setDraft("")}>Clear</button>
-              )}
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={submitEntry}
-                disabled={posting || !draft.trim()}
+            return (
+              <div
+                key={item.instanceId}
+                className={["widget-cell", dragOverIdx===idx?"drag-over":"", dragSrcIdx===idx?"dragging":""].filter(Boolean).join(" ")}
+                style={{ gridColumn:`span ${item.cols}`, gridRow:`span ${item.rows}` }}
+                draggable={editMode}
+                onDragStart={e => { e.stopPropagation(); gDragStart(e, idx); }}
+                onDragOver={e  => { e.stopPropagation(); gDragOver(e, idx);  }}
+                onDrop={e      => { e.stopPropagation(); gDrop(e, idx);      }}
+                onDragEnd={gDragEnd}
               >
-                {posting ? "Saving…" : "Save note"}
-              </button>
+                {/* Edit bar */}
+                {editMode && (
+                  <div className="widget-bar" onClick={e => e.stopPropagation()}>
+                    <span className="widget-drag-handle" title="Drag to reorder">⠿</span>
+                    <span className="widget-bar-name">{def.name}</span>
+                    <div className="widget-bar-actions">
+                      <div style={{ position:"relative" }}>
+                        <button
+                          className="widget-bar-btn"
+                          title="Resize"
+                          onClick={e => { e.stopPropagation(); setSizeOf(s => s===item.instanceId ? null : item.instanceId); }}
+                        >
+                          {item.cols}×{item.rows}
+                        </button>
+                        {sizeOf === item.instanceId && (
+                          <div className="size-popover" onClick={e => e.stopPropagation()}>
+                            {def.sizes.map(s => (
+                              <button
+                                key={`${s.cols}x${s.rows}`}
+                                className={`size-opt${s.cols===item.cols&&s.rows===item.rows?" size-active":""}`}
+                                onClick={() => resizeWidget(item.instanceId, s.cols, s.rows)}
+                              >
+                                <span style={{fontFamily:"var(--mono)"}}>{s.cols}×{s.rows}</span>
+                                <span>{s.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button className="widget-bar-btn widget-remove" title="Remove" onClick={() => removeWidget(item.instanceId)}>×</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Content */}
+                <div className="widget-content">
+                  <Comp cols={item.cols} rows={item.rows} enabledApps={enabledApps} />
+                </div>
+              </div>
+            );
+          })}
+
+          {layout.length === 0 && (
+            <div style={{ gridColumn:"span 12", textAlign:"center", padding:48, color:"var(--text3)", fontSize:13 }}>
+              No widgets yet. Click <strong style={{color:"var(--text)"}}>⊞ Customize</strong> to add some.
+            </div>
+          )}
+        </div>
+
+        {/* ── Palette panel ── */}
+        {editMode && (
+          <div className="widget-panel" onClick={e => e.stopPropagation()}>
+            <div className="widget-panel-head">Widget Library</div>
+            <div className="widget-panel-scroll">
+              {availableWidgets.map(def => {
+                const Comp = WIDGET_COMPONENTS[def.id];
+                return (
+                  <div
+                    key={def.id}
+                    className="palette-card"
+                    draggable
+                    onDragStart={e => pDragStart(e, def.id)}
+                    onDragEnd={() => setPalDrag(null)}
+                  >
+                    <div className="palette-preview">
+                      {Comp
+                        ? <Comp cols={def.defaultCols} rows={Math.min(def.defaultRows,2)} preview enabledApps={enabledApps} />
+                        : <div style={{padding:12,fontSize:24}}>{def.icon}</div>
+                      }
+                    </div>
+                    <div className="palette-info">
+                      <div className="palette-name">{def.icon} {def.name}</div>
+                      <div className="palette-desc">{def.description}</div>
+                      <div className="palette-sizes">
+                        {def.sizes.map(s => (
+                          <span key={`${s.cols}x${s.rows}`} className="palette-size-tag">{s.cols}×{s.rows}</span>
+                        ))}
+                      </div>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        style={{ width:"100%", justifyContent:"center", marginTop:4 }}
+                        onClick={() => addWidget(def.id)}
+                      >+ Add to home</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {availableWidgets.length === 0 && (
+                <div style={{color:"var(--text3)",fontSize:11,fontFamily:"var(--mono)",padding:8}}>
+                  Enable apps in Settings to unlock more widgets.
+                </div>
+              )}
             </div>
           </div>
-
-          {/* Recent entries */}
-          {entries.length === 0 && (
-            <div className="no-data" style={{ padding:"16px 0" }}>No notes yet</div>
-          )}
-          {entries.map(e => (
-            <div key={e.id} className="card"
-                 style={{ marginBottom:8, padding:"10px 14px", cursor:"pointer" }}
-                 onClick={() => setExpanded(ex => ex === e.id ? null : e.id)}>
-              <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:"var(--text3)", fontFamily:"var(--mono)",
-                                marginBottom:4 }}>
-                    {new Date(e.ts).toLocaleDateString("en-GB", {
-                      weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"
-                    })} · {timeAgo(e.ts)}
-                    {e.topic && e.topic !== "journal" && (
-                      <span style={{ marginLeft:8, color:"var(--cyan)", fontSize:10 }}>{e.topic}</span>
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize:13, color:"var(--text)", lineHeight:1.5, whiteSpace:"pre-wrap",
-                    overflow: expanded === e.id ? "visible" : "hidden",
-                    display:  expanded === e.id ? "block" : "-webkit-box",
-                    WebkitLineClamp: expanded === e.id ? "unset" : 2,
-                    WebkitBoxOrient: "vertical",
-                  }}>
-                    {e.content}
-                  </div>
-                </div>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
-                  style={{ flexShrink:0, padding:"2px 7px", fontSize:11 }}
-                  title="Delete"
-                >✕</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
