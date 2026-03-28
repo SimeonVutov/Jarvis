@@ -108,106 +108,165 @@ function WeatherWidget({ cols, rows, preview }) {
 
   const s = sz(cols, rows);
 
-  // tiny (3×1): icon + temp on one line
+  function fmtTime(t) { return String(t).padStart(4,"0").replace(/(\d{2})(\d{2})/,"$1:$2"); }
+  const hourly = d.hourly || [];
+
+  // ── TINY (3×1): icon + temp, single line ──────────────────────────
   if (s === "tiny") return (
-    <div className="wg-pad" style={{ flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center" }}>
-      <span style={{ fontSize: 30 }}>{weatherIcon(d.desc)}</span>
+    <div className="wg-pad" style={{ flexDirection:"row", alignItems:"center", gap:12, justifyContent:"center" }}>
+      <span style={{ fontSize:34, lineHeight:1 }}>{weatherIcon(d.desc)}</span>
       <div>
-        <div style={{ fontSize: 26, fontWeight: 700, fontFamily: "var(--mono)", lineHeight: 1 }}>{d.temp_c}°</div>
-        <div style={{ fontSize: 9, color: "var(--text3)" }}>{d.city}</div>
+        <div style={{ fontSize:30, fontWeight:700, fontFamily:"var(--mono)", lineHeight:1 }}>{d.temp_c}°</div>
+        <div style={{ fontSize:9, color:"var(--text3)", marginTop:3 }}>{d.city}</div>
       </div>
     </div>
   );
 
-  // mini (wider row): icon + temp + conditions, all inline
+  // ── MINI (wide row, 1 row): temp + desc + stats all on one line ───
   if (s === "mini") return (
-    <div className="wg-pad" style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-      <span style={{ fontSize: 38 }}>{weatherIcon(d.desc)}</span>
-      <div>
-        <div style={{ fontSize: 32, fontWeight: 300, fontFamily: "var(--mono)", lineHeight: 1 }}>{d.temp_c}°</div>
-        <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>{d.desc}</div>
+    <div className="wg-pad" style={{ flexDirection:"row", alignItems:"center", gap:16 }}>
+      <span style={{ fontSize:40, lineHeight:1, flexShrink:0 }}>{weatherIcon(d.desc)}</span>
+      <div style={{ flexShrink:0 }}>
+        <div style={{ fontSize:36, fontWeight:200, fontFamily:"var(--mono)", lineHeight:1 }}>{d.temp_c}°</div>
+        <div style={{ fontSize:11, color:"var(--cyan)", fontFamily:"var(--mono)", marginTop:2 }}>↑{d.max_c}° ↓{d.min_c}°</div>
       </div>
-      <div style={{ marginLeft: "auto", textAlign: "right" }}>
-        <div style={{ fontSize: 11, color: "var(--text3)" }}>Feels {d.feels_like}°</div>
-        <div style={{ fontSize: 11, color: "var(--text3)" }}>{d.humidity}% · {d.wind_kmph}km/h</div>
-        <div style={{ fontSize: 11, color: "var(--cyan)", fontFamily: "var(--mono)" }}>↑{d.max_c}° ↓{d.min_c}°</div>
+      <div style={{ flex:1, borderLeft:"1px solid var(--border)", paddingLeft:16 }}>
+        <div style={{ fontSize:13, color:"var(--text)", marginBottom:4 }}>{d.desc}</div>
+        <div style={{ fontSize:11, color:"var(--text3)" }}>Feels {d.feels_like}° · {d.humidity}% · {d.wind_kmph} km/h · {d.city}</div>
       </div>
+      {/* Hourly strip fills the rest */}
+      {hourly.length > 0 && (
+        <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+          {hourly.slice(0,4).map((h,i)=>(
+            <div key={i} style={{ textAlign:"center", minWidth:36 }}>
+              <div style={{ fontSize:9, color:"var(--text3)", fontFamily:"var(--mono)" }}>{fmtTime(h.time)}</div>
+              <div style={{ fontSize:16, margin:"2px 0" }}>{weatherIcon(h.desc)}</div>
+              <div style={{ fontSize:11, fontFamily:"var(--mono)", color:"var(--text2)" }}>{h.temp}°</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
-  // compact (≤4×2): large temp card, full conditions, no hourly
+  // ── COMPACT (≤4×2): big temp left, conditions right, no hourly ────
   if (s === "compact") return (
-    <div className="wg-pad">
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1 }}>
+    <div className="wg-pad" style={{ justifyContent:"space-between" }}>
+      <div style={{ display:"flex", gap:14, alignItems:"flex-start", flex:1 }}>
         <div>
-          <div style={{ fontSize: 52, fontWeight: 200, fontFamily: "var(--mono)", lineHeight: 1, color: "var(--text)" }}>
-            {d.temp_c}°
-          </div>
-          <div style={{ fontSize: 11, color: "var(--cyan)", fontFamily: "var(--mono)", marginTop: 4 }}>
-            ↑{d.max_c}° ↓{d.min_c}°
-          </div>
+          <div style={{ fontSize:58, fontWeight:200, fontFamily:"var(--mono)", lineHeight:1 }}>{d.temp_c}°</div>
+          <div style={{ fontSize:12, color:"var(--cyan)", fontFamily:"var(--mono)", marginTop:6 }}>↑{d.max_c}° ↓{d.min_c}°</div>
         </div>
-        <div style={{ flex: 1, paddingTop: 8 }}>
-          <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 6 }}>
-            {weatherIcon(d.desc)} {d.desc}
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 3 }}>Feels like {d.feels_like}°</div>
-          <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 3 }}>{d.humidity}% humidity</div>
-          <div style={{ fontSize: 11, color: "var(--text3)" }}>{d.wind_kmph} km/h wind</div>
+        <div style={{ paddingTop:6 }}>
+          <div style={{ fontSize:14, color:"var(--text)", marginBottom:8 }}>{weatherIcon(d.desc)} {d.desc}</div>
+          <div style={{ fontSize:12, color:"var(--text3)", marginBottom:4 }}>Feels like {d.feels_like}°</div>
+          <div style={{ fontSize:12, color:"var(--text3)", marginBottom:4 }}>{d.humidity}% humidity</div>
+          <div style={{ fontSize:12, color:"var(--text3)" }}>{d.wind_kmph} km/h wind</div>
         </div>
       </div>
-      <div style={{ fontSize: 10, color: "var(--text3)", marginTop: "auto", paddingTop: 8 }}>{d.city}</div>
+      <div style={{ fontSize:10, color:"var(--text3)" }}>{d.city}</div>
     </div>
   );
 
-  // standard (≤6×2): current conditions + 4-hour strip
+  // ── STANDARD (≤6×2): conditions top + hourly fills bottom ─────────
   if (s === "standard") return (
-    <div className="wg-pad" style={{ gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div className="weather-temp">{d.temp_c}°</div>
+    <div className="wg-pad" style={{ gap:0 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:14, paddingBottom:10 }}>
+        <div style={{ fontSize:42, fontWeight:200, fontFamily:"var(--mono)", lineHeight:1, flexShrink:0 }}>{d.temp_c}°</div>
         <div>
-          <div className="weather-desc">{weatherIcon(d.desc)} {d.desc}</div>
-          <div className="weather-sub">Feels {d.feels_like}° · {d.humidity}% · {d.wind_kmph} km/h</div>
-          <div className="weather-sub">↑{d.max_c}° ↓{d.min_c}° · {d.city}</div>
+          <div style={{ fontSize:14, color:"var(--text)", marginBottom:4 }}>{weatherIcon(d.desc)} {d.desc}</div>
+          <div style={{ fontSize:11, color:"var(--text3)" }}>Feels {d.feels_like}° · {d.humidity}% · {d.wind_kmph} km/h · ↑{d.max_c}° ↓{d.min_c}°</div>
+          <div style={{ fontSize:10, color:"var(--text3)", marginTop:2 }}>{d.city}</div>
         </div>
       </div>
-      <hr className="wg-divider" />
-      <div className="hourly-list">
-        {(d.hourly || []).slice(0, 4).map((h, i) => (
-          <div key={i} className="hourly-item">
-            <div className="hourly-time">{String(h.time).padStart(4,"0").replace(/(\d{2})(\d{2})/,"$1:$2")}</div>
-            <div className="hourly-temp">{h.temp}°</div>
-            <div>{weatherIcon(h.desc)}</div>
+      {hourly.length > 0 && (
+        <>
+          <hr className="wg-divider" style={{ margin:"0 0 8px" }} />
+          <div style={{ display:"flex", flex:1, gap:0 }}>
+            {hourly.map((h,i)=>(
+              <div key={i} style={{
+                flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+                justifyContent:"center", gap:4, padding:"6px 4px",
+                background: i%2===0 ? "rgba(255,255,255,.02)" : "transparent",
+                borderRadius:6,
+              }}>
+                <div style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>{fmtTime(h.time)}</div>
+                <div style={{ fontSize:18 }}>{weatherIcon(h.desc)}</div>
+                <div style={{ fontSize:13, fontWeight:600, fontFamily:"var(--mono)", color:"var(--text)" }}>{h.temp}°</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 
-  // wide (>6×2) or tall: full hourly forecast
-  return (
-    <div className="wg-pad" style={{ gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div className="weather-temp" style={{ fontSize: s === "tall" ? 54 : 36 }}>{d.temp_c}°</div>
+  // ── WIDE (>6 cols, 2 rows): side-by-side conditions + full hourly ─
+  if (s === "wide") return (
+    <div className="wg-pad" style={{ flexDirection:"row", gap:16 }}>
+      {/* Left: current */}
+      <div style={{ display:"flex", flexDirection:"column", justifyContent:"space-between", minWidth:160, flexShrink:0 }}>
         <div>
-          <div className="weather-desc" style={{ fontSize: s === "tall" ? 15 : 13 }}>
-            {weatherIcon(d.desc)} {d.desc}
+          <div style={{ fontSize:52, fontWeight:200, fontFamily:"var(--mono)", lineHeight:1 }}>{d.temp_c}°</div>
+          <div style={{ fontSize:13, color:"var(--text)", margin:"8px 0 6px" }}>{weatherIcon(d.desc)} {d.desc}</div>
+          <div style={{ fontSize:11, color:"var(--text3)", lineHeight:1.8 }}>
+            Feels {d.feels_like}°<br/>{d.humidity}% humidity<br/>{d.wind_kmph} km/h<br/>↑{d.max_c}° ↓{d.min_c}°
           </div>
-          <div className="weather-sub">Feels {d.feels_like}° · {d.humidity}% humidity · {d.wind_kmph} km/h</div>
-          <div className="weather-sub">↑{d.max_c}° ↓{d.min_c}° · {d.city}</div>
+        </div>
+        <div style={{ fontSize:10, color:"var(--text3)" }}>{d.city}</div>
+      </div>
+      {/* Right: hourly fills remaining space */}
+      {hourly.length > 0 && (
+        <div style={{ flex:1, display:"flex", flexDirection:"column", borderLeft:"1px solid var(--border)", paddingLeft:16 }}>
+          <div className="wg-micro" style={{ marginBottom:8 }}>Hourly</div>
+          <div style={{ flex:1, display:"flex", gap:0 }}>
+            {hourly.map((h,i)=>(
+              <div key={i} style={{
+                flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+                justifyContent:"center", gap:5,
+                background: i%2===0 ? "rgba(255,255,255,.025)" : "transparent",
+                borderRadius:8, padding:"8px 4px",
+              }}>
+                <div style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>{fmtTime(h.time)}</div>
+                <div style={{ fontSize:22 }}>{weatherIcon(h.desc)}</div>
+                <div style={{ fontSize:14, fontWeight:600, fontFamily:"var(--mono)", color:"var(--text)" }}>{h.temp}°</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── TALL (rows>=3): stacked — big current + full hourly grid ──────
+  return (
+    <div className="wg-pad" style={{ gap:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+        <div style={{ fontSize:56, fontWeight:200, fontFamily:"var(--mono)", lineHeight:1 }}>{d.temp_c}°</div>
+        <div>
+          <div style={{ fontSize:15, color:"var(--text)", marginBottom:5 }}>{weatherIcon(d.desc)} {d.desc}</div>
+          <div style={{ fontSize:12, color:"var(--text3)" }}>Feels {d.feels_like}° · {d.humidity}% · {d.wind_kmph} km/h</div>
+          <div style={{ fontSize:11, color:"var(--cyan)", fontFamily:"var(--mono)", marginTop:3 }}>↑{d.max_c}° ↓{d.min_c}° · {d.city}</div>
         </div>
       </div>
-      <hr className="wg-divider" />
-      <div className="hourly-list" style={{ flexWrap: s === "tall" ? "wrap" : "nowrap" }}>
-        {(d.hourly || []).map((h, i) => (
-          <div key={i} className="hourly-item" style={s === "tall" ? { flex: "1 0 52px", textAlign: "center" } : {}}>
-            <div className="hourly-time">{String(h.time).padStart(4,"0").replace(/(\d{2})(\d{2})/,"$1:$2")}</div>
-            {s === "tall" && <div style={{ fontSize: 20, margin: "4px 0" }}>{weatherIcon(h.desc)}</div>}
-            <div className="hourly-temp">{h.temp}°</div>
-            {s !== "tall" && <div style={{ fontSize: 12 }}>{weatherIcon(h.desc)}</div>}
+      {hourly.length > 0 && (
+        <>
+          <hr className="wg-divider" />
+          <div style={{ flex:1, display:"grid", gridTemplateColumns:`repeat(${hourly.length}, 1fr)`, gap:6 }}>
+            {hourly.map((h,i)=>(
+              <div key={i} style={{
+                display:"flex", flexDirection:"column", alignItems:"center",
+                gap:6, padding:"10px 4px", background:"rgba(255,255,255,.03)",
+                borderRadius:8, border:"1px solid var(--border)",
+              }}>
+                <div style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>{fmtTime(h.time)}</div>
+                <div style={{ fontSize:26 }}>{weatherIcon(h.desc)}</div>
+                <div style={{ fontSize:15, fontWeight:700, fontFamily:"var(--mono)" }}>{h.temp}°</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }
