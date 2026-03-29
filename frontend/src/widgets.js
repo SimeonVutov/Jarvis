@@ -134,10 +134,10 @@ const WIDGET_REGISTRY = [
   },
 ];
 
-// Default layout shown on first visit (before any customisation)
+// Default layout — includes explicit gridCol/gridRow for free-form placement
 const DEFAULT_LAYOUT = [
-  { instanceId: "default-greeting",  widgetId: "greeting",       cols: 12, rows: 1 },
-  { instanceId: "default-weather",   widgetId: "weather",        cols: 4,  rows: 2 },
-  { instanceId: "default-remind",    widgetId: "reminders",      cols: 4,  rows: 2 },
-  { instanceId: "default-calendar",  widgetId: "calendar-today", cols: 4,  rows: 2 },
+  { instanceId: "default-greeting",  widgetId: "greeting",       cols: 12, rows: 1, gridCol: 0, gridRow: 0 },
+  { instanceId: "default-weather",   widgetId: "weather",        cols: 4,  rows: 2, gridCol: 0, gridRow: 1 },
+  { instanceId: "default-remind",    widgetId: "reminders",      cols: 4,  rows: 2, gridCol: 4, gridRow: 1 },
+  { instanceId: "default-calendar",  widgetId: "calendar-today", cols: 4,  rows: 2, gridCol: 8, gridRow: 1 },
 ];
