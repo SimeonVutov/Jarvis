@@ -1,0 +1,282 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Widget Home System — CSS
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Page shell ───────────────────────────────────────────────────── */
+.home-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.home-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 10px 16px 6px;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.home-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+
+/* ── Widget grid ──────────────────────────────────────────────────── */
+.widget-grid-wrap {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;   /* needed for overlay positioning */
+  min-width: 0;
+}
+.widget-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-rows: 140px;
+  gap: 12px;
+  padding: 0 16px 16px;
+  align-content: start;
+  position: relative;
+  min-height: 100%;
+}
+
+/* ── Grid overlay (visible during drag) ───────────────────────────── */
+.grid-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-rows: 140px;
+  gap: 12px;
+  padding: 0 16px 16px;
+  pointer-events: none;
+  z-index: 5;
+}
+.grid-overlay-cell {
+  border-radius: 8px;
+  border: 1px dashed rgba(0,200,240,.18);
+  background: rgba(0,200,240,.02);
+  transition: background .1s, border-color .1s;
+}
+.grid-overlay-cell.cell-occupied {
+  border-color: rgba(240,64,96,.15);
+  background: rgba(240,64,96,.04);
+}
+.grid-overlay-cell.cell-hover-ok {
+  border-color: rgba(0,200,240,.6);
+  background: rgba(0,200,240,.12);
+}
+.grid-overlay-cell.cell-hover-bad {
+  border-color: rgba(240,64,96,.5);
+  background: rgba(240,64,96,.15);
+}
+
+/* ── Widget cell ──────────────────────────────────────────────────── */
+.widget-cell {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: opacity .15s, outline .12s, box-shadow .12s;
+  position: relative;
+  min-height: 0;
+}
+.widget-cell.drag-over {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px rgba(0,200,240,.12);
+}
+.widget-cell.dragging    { opacity: 0.35; }
+/* Dim all cells while dragging from palette so overlay is readable */
+.widget-grid:has(.dragging) .widget-cell:not(.dragging) { opacity: 0.7; }
+/* dim all cells when dragging from palette */
+.widget-grid.palette-drag .widget-cell {
+  opacity: 0.55;
+}
+
+/* ── Edit bar ─────────────────────────────────────────────────────── */
+.widget-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,.3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
+  height: 28px;
+  box-sizing: border-box;
+}
+.widget-drag-handle {
+  font-size: 14px;
+  color: var(--text3);
+  cursor: grab;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.widget-bar-name {
+  flex: 1;
+  font-size: 9px;
+  font-family: var(--mono);
+  color: var(--text3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.widget-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.widget-bar-btn {
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 2px 7px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background .1s, color .1s, border-color .1s;
+}
+.widget-bar-btn:hover { background: rgba(0,200,240,.15); color: var(--cyan); border-color: var(--cyan); }
+.widget-bar-btn.widget-remove { color: var(--text3); }
+.widget-bar-btn.widget-remove:hover { background: rgba(240,64,96,.15); color: var(--red); border-color: var(--red); }
+
+.widget-content {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Size popover ─────────────────────────────────────────────────── */
+.size-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 6px;
+  min-width: 175px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.45);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.size-opt {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text2);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  transition: background .1s;
+  width: 100%;
+}
+.size-opt span { font-size: 9px; color: var(--text3); }
+.size-opt:hover { background: rgba(255,255,255,.06); }
+.size-opt.size-active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,200,240,.08); }
+
+/* ── Widget palette panel ─────────────────────────────────────────── */
+.widget-panel {
+  width: 270px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg1);
+  animation: slideInRight .2s ease;
+}
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.widget-panel-head {
+  padding: 12px 14px 10px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.widget-panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Palette card ─────────────────────────────────────────────────── */
+.palette-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+  overflow: hidden;
+  cursor: grab;
+  transition: border-color .15s, box-shadow .15s;
+  user-select: none;
+}
+.palette-card:hover { border-color: var(--border2); box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+.palette-card:active { cursor: grabbing; }
+.palette-preview {
+  height: 80px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  pointer-events: none;
+}
+.palette-info { padding: 8px 10px; }
+.palette-name { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.palette-desc { font-size: 10px; color: var(--text3); line-height: 1.4; margin-bottom: 6px; }
+.palette-sizes { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.palette-size-tag {
+  font-size: 9px; font-family: var(--mono); color: var(--text3);
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 3px; padding: 1px 5px;
+}
+
+/* ── Widget inner helpers ─────────────────────────────────────────── */
+.wg-pad {
+  padding: 12px 14px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.wg-micro {
+  font-size: 9px;
+  font-family: var(--mono);
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
+.wg-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.45; }
+.wg-big   { font-size: 26px; font-weight: 700; font-family: var(--mono); line-height: 1; }
+.wg-empty { font-size: 11px; color: var(--text3); font-family: var(--mono); padding: 4px 0; }
+.wg-divider { border: none; border-top: 1px solid rgba(26,45,74,.4); margin: 2px 0; flex-shrink: 0; }

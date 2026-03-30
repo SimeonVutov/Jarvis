@@ -1,253 +1,572 @@
-const { useState, useEffect, useRef } = React;
+// HomePage.jsx — Free-form widget grid
+//
+// DRAG ARCHITECTURE:
+//   Grid → grid moves: pointer events (pointerdown/move/up on window).
+//     pointermove ALWAYS fires. No HTML5 drag, no stale closures.
+//     Widget fades to 0.3 opacity while dragging, grid shows live overlay.
+//
+//   Palette → grid adds: HTML5 drag (dragstart on palette card).
+//     Wrap container has onDragOver + onDrop — these receive events via
+//     bubbling (no capture div needed, no z-index issues).
+//
+//   Both paths write to refs before committing so state is always current.
+//
+// LAYOUT: each item stores explicit gridRow + gridCol. CSS grid uses
+//   grid-column: col+1 / span cols; grid-row: row+1 / span rows.
+//   No auto-flow — gaps are intentional and allowed.
 
-function HomePage({ enabledApps }) {
-  const [dashData,     setDashData]     = useState(null);
-  const [weather,      setWeather]      = useState(null);
-  const [greeting,     setGreeting]     = useState("");
-  const [greetLoading, setGreetLoading] = useState(true);
-  const [newsSnippets, setNewsSnippets] = useState([]);
+const { useState, useEffect, useRef, useMemo } = React;
 
-  // Journal state
-  const [entries,      setEntries]      = useState([]);
-  const [draft,        setDraft]        = useState("");
-  const [posting,      setPosting]      = useState(false);
-  const [expanded,     setExpanded]     = useState(null); // id of expanded entry
-  const textRef = useRef(null);
+const COLS  = 12;
+const ROW_H = 140;   // must match grid-auto-rows in widgets.css
+const GAP   = 12;    // must match gap in widgets.css
+const PAD   = 16;    // left+right padding of .widget-grid
 
-  useEffect(() => {
-    api("/api/dashboard").then(setDashData).catch(() => {});
-    api("/api/weather").then(setWeather).catch(() => {});
-    api("/api/home/greeting")
-      .then(d => { setGreeting(d.greeting || ""); setGreetLoading(false); })
-      .catch(() => setGreetLoading(false));
-    api("/api/news").then(news => {
-      const items = [];
-      Object.values(news).forEach(feeds =>
-        Object.values(feeds).forEach(f => {
-          if (f.items?.length) items.push({ src: f.name, title: f.items[0].title, link: f.items[0].link });
-        })
+// ── Migrate old items (no gridCol/gridRow) to explicit positions ───────
+function migrateLayout(raw) {
+  const occ = new Set();
+  function tryPlace(cols, rows) {
+    for (let r = 0; r < 100; r++)
+      for (let c = 0; c <= COLS - cols; c++) {
+        let ok = true;
+        L: for (let dr = 0; dr < rows; dr++)
+          for (let dc = 0; dc < cols; dc++)
+            if (occ.has(`${r+dr},${c+dc}`)) { ok = false; break L; }
+        if (ok) {
+          for (let dr = 0; dr < rows; dr++)
+            for (let dc = 0; dc < cols; dc++)
+              occ.add(`${r+dr},${c+dc}`);
+          return { gridRow: r, gridCol: c };
+        }
+      }
+    return { gridRow: 0, gridCol: 0 };
+  }
+  return raw.map(item => {
+    if (item.gridCol != null && item.gridRow != null) {
+      for (let dr = 0; dr < (item.rows||1); dr++)
+        for (let dc = 0; dc < (item.cols||4); dc++)
+          occ.add(`${item.gridRow+dr},${item.gridCol+dc}`);
+      return item;
+    }
+    return { ...item, ...tryPlace(item.cols||4, item.rows||1) };
+  });
+}
+
+// ── Build set of occupied "row,col" strings ────────────────────────────
+function buildOccupied(layout, excludeId = null) {
+  const occ = new Set();
+  for (const w of layout) {
+    if (w.instanceId === excludeId || w.gridCol == null) continue;
+    for (let r = w.gridRow; r < w.gridRow + (w.rows||1); r++)
+      for (let c = w.gridCol; c < w.gridCol + (w.cols||4); c++)
+        occ.add(`${r},${c}`);
+  }
+  return occ;
+}
+
+// ── Convert clientX/Y to {row,col} relative to grid wrap ──────────────
+function mouseToCell(clientX, clientY, wrapEl) {
+  if (!wrapEl) return null;
+  const rect  = wrapEl.getBoundingClientRect();
+  const cellW = (rect.width - PAD * 2 - GAP * (COLS - 1)) / COLS;
+  const x = clientX - rect.left - PAD;
+  const y = clientY - rect.top  + wrapEl.scrollTop;
+  if (x < 0 || y < 0) return null;
+  return {
+    col: Math.max(0, Math.min(COLS - 1, Math.floor(x / (cellW + GAP)))),
+    row: Math.max(0, Math.floor(y / (ROW_H + GAP))),
+  };
+}
+
+// ── Check if dragCols×dragRows fits at (row,col) ───────────────────────
+function fitsAt(occ, row, col, dragCols, dragRows) {
+  if (col + dragCols > COLS) return false;
+  for (let dr = 0; dr < dragRows; dr++)
+    for (let dc = 0; dc < dragCols; dc++)
+      if (occ.has(`${row+dr},${col+dc}`)) return false;
+  return true;
+}
+
+// ── Visual grid overlay ────────────────────────────────────────────────
+function GridOverlay({ layout, excludeId, dragCols, dragRows, hoverCell, totalRows }) {
+  const occ  = useMemo(() => buildOccupied(layout, excludeId), [layout, excludeId]);
+  const fits = useMemo(() => {
+    if (!hoverCell) return null;
+    return fitsAt(occ, hoverCell.row, hoverCell.col, dragCols, dragRows);
+  }, [hoverCell, occ, dragCols, dragRows]);
+
+  const cells = [];
+  for (let r = 0; r < totalRows; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const isOcc = occ.has(`${r},${c}`);
+      const inFP  = hoverCell &&
+        r >= hoverCell.row && r < hoverCell.row + dragRows &&
+        c >= hoverCell.col && c < hoverCell.col + dragCols;
+      let bg, border;
+      if      (inFP && fits === true)  { bg="rgba(0,200,240,.22)";   border="2px solid rgba(0,200,240,.85)"; }
+      else if (inFP && fits === false) { bg="rgba(240,64,96,.25)";   border="2px solid rgba(240,64,96,.75)"; }
+      else if (isOcc)                  { bg="rgba(240,64,96,.06)";   border="1px dashed rgba(240,64,96,.22)"; }
+      else                             { bg="rgba(0,200,240,.025)";  border="1px dashed rgba(0,200,240,.13)"; }
+      cells.push(
+        <div key={`${r}-${c}`} style={{
+          gridColumn: `${c+1}`, gridRow: `${r+1}`,
+          background: bg, border, borderRadius: 8,
+          transition: "background .07s, border-color .07s",
+        }} />
       );
-      setNewsSnippets(items.slice(0, 3));
-    }).catch(() => {});
-    loadEntries();
+    }
+  }
+  return (
+    <div style={{
+      position:"absolute", top:0, left:0, right:0,
+      display:"grid",
+      gridTemplateColumns:`repeat(${COLS},1fr)`,
+      gridTemplateRows:`repeat(${totalRows},${ROW_H}px)`,
+      gap:GAP, padding:`0 ${PAD}px`,
+      zIndex:1, pointerEvents:"none",
+    }}>
+      {cells}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// HomePage
+// ══════════════════════════════════════════════════════════════════════
+function HomePage({ enabledApps }) {
+  const [layout,    setLayout]    = useState(null);
+  const [editMode,  setEditMode]  = useState(false);
+  const [hoverCell, setHoverCell] = useState(null);
+  const [sizeOf,    setSizeOf]    = useState(null);
+
+  // Pointer-drag state (grid→grid moves)
+  const [ptrDragId,   setPtrDragId]   = useState(null);  // instanceId
+  const [ptrDragSize, setPtrDragSize] = useState(null);  // {cols,rows}
+
+  // Refs — always current, safe to read inside event listeners
+  const layoutRef      = useRef(null);
+  const ptrDragIdRef   = useRef(null);
+  const ptrDragSizeRef = useRef(null);
+  const palDragIdRef   = useRef(null);   // for HTML5 palette drag
+  const palDragSizeRef = useRef(null);
+  const hoverCellRef   = useRef(null);
+  const wrapRef        = useRef(null);
+
+  const isDragging = ptrDragId !== null || palDragIdRef.current !== null;
+
+  // ── Load ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    api("/api/home/layout")
+      .then(d => {
+        const raw = d.layout?.length ? d.layout : [...DEFAULT_LAYOUT];
+        const ml  = migrateLayout(raw);
+        setLayout(ml);
+        layoutRef.current = ml;
+      })
+      .catch(() => {
+        const ml = migrateLayout([...DEFAULT_LAYOUT]);
+        setLayout(ml);
+        layoutRef.current = ml;
+      });
   }, []);
 
-  async function loadEntries() {
-    const rows = await api("/api/journal?limit=20").catch(() => []);
-    setEntries(rows);
+  // Keep layoutRef current whenever layout changes
+  useEffect(() => { layoutRef.current = layout; }, [layout]);
+
+  // ── Close size popover on outside click ──────────────────────────────
+  useEffect(() => {
+    function close(e) { if (!e.target.closest?.(".size-popover")) setSizeOf(null); }
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, []);
+
+  // ── Pointer-drag: pointermove + pointerup on window ──────────────────
+  useEffect(() => {
+    function onMove(e) {
+      if (!ptrDragIdRef.current && !palDragIdRef.current) return;
+      const cell = mouseToCell(e.clientX, e.clientY, wrapRef.current);
+      hoverCellRef.current = cell;
+      setHoverCell(cell ? { ...cell } : null);
+    }
+
+    function onUp(e) {
+      const dragId = ptrDragIdRef.current;
+      if (!dragId) return;  // not a pointer drag
+
+      const cell   = hoverCellRef.current;
+      const layout = layoutRef.current;
+      const size   = ptrDragSizeRef.current;
+
+      if (cell && layout && size) {
+        const { row, col }   = cell;
+        const { cols, rows } = size;
+        const occ = buildOccupied(layout, dragId);
+        if (fitsAt(occ, row, col, cols, rows)) {
+          const nl = layout.map(w =>
+            w.instanceId === dragId ? { ...w, gridRow: row, gridCol: col } : w
+          );
+          setLayout(nl);
+          layoutRef.current = nl;
+          jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
+        }
+      }
+
+      // clear
+      ptrDragIdRef.current   = null;
+      ptrDragSizeRef.current = null;
+      hoverCellRef.current   = null;
+      setPtrDragId(null);
+      setPtrDragSize(null);
+      setHoverCell(null);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup",   onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup",   onUp);
+    };
+  }, []);  // runs once — reads from refs, never stale
+
+  // ── Persist ──────────────────────────────────────────────────────────
+  function persist(nl) {
+    setLayout(nl);
+    layoutRef.current = nl;
+    jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
   }
 
-  async function submitEntry() {
-    const text = draft.trim();
-    if (!text) return;
-    setPosting(true);
-    await jsonPost("/api/journal", { content: text }).catch(() => {});
-    setDraft("");
-    setPosting(false);
-    loadEntries();
+  function removeWidget(iid) { persist(layoutRef.current.filter(w => w.instanceId !== iid)); }
+
+  // After resizing a widget, any widget whose cells now overlap the resized one
+  // is moved to the next free position (push-down, no overlap allowed).
+  function resolveOverlaps(layout) {
+    // Process in order: resized widget is already placed; fix the rest
+    const result = [];
+    const occ = new Set();
+
+    // Helper: find first free spot for cols×rows
+    function firstFree(cols, rows) {
+      for (let r = 0; r < 100; r++)
+        for (let c = 0; c <= COLS - cols; c++) {
+          let ok = true;
+          L: for (let dr = 0; dr < rows; dr++)
+            for (let dc = 0; dc < cols; dc++)
+              if (occ.has(`${r+dr},${c+dc}`)) { ok = false; break L; }
+          if (ok) return { gridRow: r, gridCol: c };
+        }
+      return { gridRow: 0, gridCol: 0 };
+    }
+
+    for (const w of layout) {
+      const cols = w.cols || 4;
+      const rows = w.rows || 1;
+      let gr = w.gridRow ?? 0;
+      let gc = w.gridCol ?? 0;
+
+      // Check if this widget's current position overlaps anything already placed
+      let conflicts = false;
+      if (gc + cols > COLS) { conflicts = true; }
+      else {
+        for (let dr = 0; dr < rows && !conflicts; dr++)
+          for (let dc = 0; dc < cols && !conflicts; dc++)
+            if (occ.has(`${gr+dr},${gc+dc}`)) conflicts = true;
+      }
+
+      if (conflicts) {
+        const pos = firstFree(cols, rows);
+        gr = pos.gridRow; gc = pos.gridCol;
+      }
+
+      for (let dr = 0; dr < rows; dr++)
+        for (let dc = 0; dc < cols; dc++)
+          occ.add(`${gr+dr},${gc+dc}`);
+
+      result.push({ ...w, gridRow: gr, gridCol: gc });
+    }
+    return result;
   }
 
-  async function deleteEntry(id) {
-    if (!confirm("Delete this entry?")) return;
-    await httpDel(`/api/journal/${id}`).catch(() => {});
-    setEntries(e => e.filter(x => x.id !== id));
+  function resizeWidget(iid, cols, rows) {
+    // Apply new size to the target widget first, then resolve any overlaps
+    const updated = layoutRef.current.map(w =>
+      w.instanceId === iid ? { ...w, cols, rows } : w
+    );
+    // Put resized widget first in the resolve pass so it keeps its position
+    const resized  = updated.find(w => w.instanceId === iid);
+    const others   = updated.filter(w => w.instanceId !== iid);
+    const resolved = resolveOverlaps([resized, ...others]);
+    persist(resolved);
+    setSizeOf(null);
   }
 
-  function handleKey(e) {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEntry();
+  // ── Pointer drag start (grid widget) ─────────────────────────────────
+  function onWidgetPointerDown(e, item) {
+    if (!editMode) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    ptrDragIdRef.current   = item.instanceId;
+    ptrDragSizeRef.current = { cols: item.cols, rows: item.rows };
+    setPtrDragId(item.instanceId);
+    setPtrDragSize({ cols: item.cols, rows: item.rows });
   }
 
-  if (!dashData) return <PageLoading />;
-
-  const { fitness, reminders = [], weekday, date: dateStr, user_name, period } = dashData;
-  const ft = fitness?.today;
-  const fy = fitness?.yesterday;
-
-  const fitnessEnabled   = !enabledApps || enabledApps.has("fitness");
-  const remindersEnabled = !enabledApps || enabledApps.has("remind");
-  const newsEnabled      = !enabledApps || enabledApps.has("news");
-  const journalEnabled   = !enabledApps || enabledApps.has("journal");
-
-  const chips = [];
-  if (weather && !weather.error)
-    chips.push({ icon: weatherIcon(weather.desc), text: `${weather.temp_c}° · ${weather.desc}` });
-  if (fitnessEnabled) {
-    if (ft?.workout)      chips.push({ icon: "🏋️", text: ft.workout });
-    else if (fy?.workout) chips.push({ icon: "🏋️", text: `Yesterday: ${fy.workout}` });
-    if (ft?.calories)     chips.push({ icon: "🔥", text: `${ft.calories} kcal` });
+  // ── HTML5 drag: palette card ─────────────────────────────────────────
+  function onPaletteDragStart(e, widgetId) {
+    const def = WIDGET_REGISTRY.find(w => w.id === widgetId);
+    palDragIdRef.current   = widgetId;
+    palDragSizeRef.current = def ? { cols: def.defaultCols, rows: def.defaultRows } : { cols:4, rows:1 };
+    e.dataTransfer.effectAllowed = "copy";
   }
-  if (remindersEnabled && reminders.length > 0) {
-    const r = reminders[0];
-    const d = daysUntil(r.due_date);
-    chips.push({ icon: "📅", text: `${d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d}d`}: ${r.title}` });
+
+  function onPaletteDragEnd() {
+    palDragIdRef.current   = null;
+    palDragSizeRef.current = null;
+    hoverCellRef.current   = null;
+    setHoverCell(null);
   }
+
+  // ── Wrap: dragover + drop (for palette → grid, via bubbling) ─────────
+  function onWrapDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!palDragIdRef.current) return;
+    const cell = mouseToCell(e.clientX, e.clientY, wrapRef.current);
+    hoverCellRef.current = cell;
+    setHoverCell(cell ? { ...cell } : null);
+  }
+
+  function onWrapDrop(e) {
+    e.preventDefault();
+    const palId = palDragIdRef.current;
+    if (!palId) return;
+
+    const cell   = mouseToCell(e.clientX, e.clientY, wrapRef.current) || hoverCellRef.current;
+    const layout = layoutRef.current;
+    const size   = palDragSizeRef.current;
+
+    if (cell && layout && size) {
+      const { row, col }   = cell;
+      const { cols, rows } = size;
+      const occ = buildOccupied(layout);
+      if (fitsAt(occ, row, col, cols, rows)) {
+        const def = WIDGET_REGISTRY.find(w => w.id === palId);
+        if (def) {
+          const nl = [...layout, {
+            instanceId: `w${Date.now()}`,
+            widgetId: palId,
+            cols: def.defaultCols,
+            rows: def.defaultRows,
+            gridRow: row,
+            gridCol: col,
+          }];
+          setLayout(nl);
+          layoutRef.current = nl;
+          jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
+        }
+      }
+    }
+
+    palDragIdRef.current   = null;
+    palDragSizeRef.current = null;
+    hoverCellRef.current   = null;
+    setHoverCell(null);
+  }
+
+  // ── Add widget at first free spot (palette button click) ─────────────
+  function addWidget(widgetId) {
+    const def    = WIDGET_REGISTRY.find(w => w.id === widgetId);
+    if (!def) return;
+    const layout = layoutRef.current || [];
+    const occ    = buildOccupied(layout);
+    for (let r = 0; r < 20; r++)
+      for (let c = 0; c <= COLS - def.defaultCols; c++)
+        if (fitsAt(occ, r, c, def.defaultCols, def.defaultRows)) {
+          persist([...layout, {
+            instanceId: `w${Date.now()}`,
+            widgetId,
+            cols: def.defaultCols,
+            rows: def.defaultRows,
+            gridRow: r,
+            gridCol: c,
+          }]);
+          return;
+        }
+  }
+
+  if (!layout) return <PageLoading />;
+
+  const totalRows = Math.max(8, ...layout.map(i => (i.gridRow||0) + (i.rows||1))) + 3;
+  const isPtrDrag = ptrDragId !== null;
+  const isPalDrag = false; // we track via ref, use it for overlay
+  const showOverlay = isPtrDrag || (ptrDragId === null && hoverCell !== null);
+
+  const dragCols = ptrDragSize?.cols || palDragSizeRef.current?.cols || 1;
+  const dragRows = ptrDragSize?.rows || palDragSizeRef.current?.rows || 1;
+
+  const availableWidgets = WIDGET_REGISTRY.filter(def =>
+    !def.app || !enabledApps || enabledApps.has(def.app)
+  );
 
   return (
-    <div className="pad">
-
-      {/* Hero greeting */}
-      <div className="home-hero">
-        <div className="hero-date">{weekday}, {dateStr}</div>
-        <div className={`hero-greeting${greetLoading ? " loading" : ""}`}>
-          {greetLoading
-            ? <><Spinner size={12} style={{ verticalAlign:"middle", marginRight:8 }} /> Thinking…</>
-            : greeting || `Good ${period || "day"}, ${user_name}.`
-          }
-        </div>
-        {chips.length > 0 && (
-          <div className="hero-chips">
-            {chips.map((c, i) => (
-              <div key={i} className="hero-chip" style={{ animationDelay:`${i * 0.06}s` }}>
-                <span>{c.icon}</span><span>{c.text}</span>
-              </div>
-            ))}
-          </div>
+    <div className="home-root">
+      {/* Top bar */}
+      <div className="home-topbar">
+        {editMode && (
+          <span style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>
+            Click &amp; drag widgets to move · drag from library to add · × to remove
+          </span>
         )}
+        <button
+          className={`btn ${editMode?"btn-primary":"btn-ghost"} btn-sm`}
+          onClick={e => { e.stopPropagation(); setEditMode(m=>!m); setSizeOf(null); }}
+        >
+          {editMode ? "✓ Done editing" : "⊞ Customize"}
+        </button>
       </div>
 
-      {/* Info grid */}
-      <div className="home-grid">
-        {/* Weather */}
-        <div className="card">
-          <div className="card-title">Weather — {weather?.city || "…"}</div>
-          {weather && !weather.error ? (
-            <>
-              <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:10 }}>
-                <div className="weather-temp">{weather.temp_c}°</div>
-                <div>
-                  <div className="weather-desc">{weatherIcon(weather.desc)} {weather.desc}</div>
-                  <div className="weather-sub">Feels {weather.feels_like}° · {weather.humidity}% · {weather.wind_kmph} km/h</div>
-                  <div className="weather-sub">↑{weather.max_c}° ↓{weather.min_c}°</div>
-                </div>
-              </div>
-              <div className="hourly-list">
-                {(weather.hourly || []).map((h, i) => (
-                  <div key={i} className="hourly-item">
-                    <div className="hourly-time">{String(h.time).padStart(4,"0").replace(/(\d{2})(\d{2})/,"$1:$2")}</div>
-                    <div className="hourly-temp">{h.temp}°</div>
-                    <div>{weatherIcon(h.desc)}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="no-data">Weather unavailable</div>
+      {/* Body */}
+      <div className="home-body">
+        <div
+          ref={wrapRef}
+          className="widget-grid-wrap"
+          onDragOver={onWrapDragOver}
+          onDrop={onWrapDrop}
+          onDragLeave={e => {
+            // Only clear hover when truly leaving the wrap
+            if (!wrapRef.current?.contains(e.relatedTarget)) {
+              hoverCellRef.current = null;
+              setHoverCell(null);
+            }
+          }}
+        >
+          {/* Visual overlay — below widgets, pointer-events:none */}
+          {hoverCell && (
+            <GridOverlay
+              layout={layout}
+              excludeId={ptrDragId}
+              dragCols={dragCols}
+              dragRows={dragRows}
+              hoverCell={hoverCell}
+              totalRows={totalRows}
+            />
           )}
-        </div>
 
-        {/* Reminders */}
-        {remindersEnabled && (
-          <div className="card">
-            <div className="card-title">Upcoming</div>
-            {reminders.length === 0 && <div className="no-data">No upcoming reminders</div>}
-            {reminders.map(r => {
-              const d   = daysUntil(r.due_date);
-              const cls = d <= 1 ? "urgent" : d <= 3 ? "soon" : "";
-              const when = d === 0 ? "TODAY" : d === 1 ? "Tomorrow" : `In ${d}d`;
+          {/* Widget grid — explicit CSS grid, no auto-flow */}
+          <div
+            className="widget-grid"
+            style={{ position:"relative", zIndex:10, gridAutoFlow:"unset" }}
+          >
+            {layout.map(item => {
+              const def  = WIDGET_REGISTRY.find(w => w.id === item.widgetId);
+              const Comp = WIDGET_COMPONENTS[item.widgetId];
+              if (!def || !Comp) return null;
+              const isDragging = item.instanceId === ptrDragId;
               return (
-                <div key={r.id} className={`reminder-item ${cls}`}>
-                  <span className="reminder-when">{when}</span>
-                  <span className="reminder-title">{r.title}</span>
-                  <button className="reminder-done" onClick={async () => {
-                    await jsonPatch(`/api/reminders/${r.id}/done`);
-                    setDashData(d => d ? { ...d, reminders: d.reminders.filter(x => x.id !== r.id) } : d);
-                  }}>✓</button>
+                <div
+                  key={item.instanceId}
+                  className={["widget-cell", isDragging?"dragging":""].filter(Boolean).join(" ")}
+                  style={{
+                    gridColumn: `${(item.gridCol??0)+1} / span ${item.cols}`,
+                    gridRow:    `${(item.gridRow??0)+1} / span ${item.rows}`,
+                    opacity:    isDragging ? 0.3 : 1,
+                    cursor:     editMode   ? "grab" : "default",
+                    transition: "opacity .15s",
+                  }}
+                  onPointerDown={e => onWidgetPointerDown(e, item)}
+                >
+                  {editMode && (
+                    <div className="widget-bar" onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}>
+                      <span className="widget-drag-handle">⠿</span>
+                      <span className="widget-bar-name">{def.name}</span>
+                      <div className="widget-bar-actions">
+                        <div style={{ position:"relative" }}>
+                          <button
+                            className="widget-bar-btn"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setSizeOf(s => s===item.instanceId ? null : item.instanceId);
+                            }}
+                          >{item.cols}×{item.rows}</button>
+                          {sizeOf===item.instanceId && (
+                            <div className="size-popover" onClick={e=>e.stopPropagation()}>
+                              {def.sizes.map(s=>(
+                                <button
+                                  key={`${s.cols}x${s.rows}`}
+                                  className={`size-opt${s.cols===item.cols&&s.rows===item.rows?" size-active":""}`}
+                                  onClick={()=>resizeWidget(item.instanceId,s.cols,s.rows)}
+                                >
+                                  <span style={{fontFamily:"var(--mono)"}}>{s.cols}×{s.rows}</span>
+                                  <span>{s.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button className="widget-bar-btn widget-remove" onPointerDown={e=>e.stopPropagation()} onClick={()=>removeWidget(item.instanceId)}>×</button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="widget-content" style={{ pointerEvents: ptrDragId ? "none" : "auto" }}>
+                    <Comp cols={item.cols} rows={item.rows} enabledApps={enabledApps} />
+                  </div>
                 </div>
               );
             })}
-          </div>
-        )}
 
-        {/* Top news */}
-        {newsEnabled && (
-          <div className="card">
-            <div className="card-title">Top stories</div>
-            {newsSnippets.length === 0 && <div className="no-data">No news sources configured</div>}
-            {newsSnippets.map((n, i) => (
-              <div key={i} style={{ padding:"6px 0", borderBottom:"1px solid rgba(26,45,74,.4)" }}>
-                <div style={{ fontSize:10, color:"var(--cyan)", fontFamily:"var(--mono)", marginBottom:2 }}>{n.src}</div>
-                <a href={n.link || "#"} target="_blank" rel="noreferrer"
-                   style={{ fontSize:12, color:"var(--text)", textDecoration:"none", lineHeight:1.4, display:"block" }}>
-                  {n.title}
-                </a>
+            {layout.length===0 && (
+              <div style={{ gridColumn:"span 12", textAlign:"center", padding:48, color:"var(--text3)", fontSize:13 }}>
+                No widgets yet. Click <strong style={{color:"var(--text)"}}>⊞ Customize</strong> to add some.
               </div>
-            ))}
+            )}
+          </div>
+        </div>
+
+        {/* Palette */}
+        {editMode && (
+          <div className="widget-panel" onClick={e=>e.stopPropagation()}>
+            <div className="widget-panel-head">Widget Library</div>
+            <div className="widget-panel-scroll">
+              {availableWidgets.map(def => {
+                const Comp = WIDGET_COMPONENTS[def.id];
+                return (
+                  <div
+                    key={def.id}
+                    className="palette-card"
+                    draggable
+                    onDragStart={e=>onPaletteDragStart(e,def.id)}
+                    onDragEnd={onPaletteDragEnd}
+                  >
+                    <div className="palette-preview">
+                      {Comp
+                        ? <Comp cols={def.defaultCols} rows={Math.min(def.defaultRows,2)} preview enabledApps={enabledApps}/>
+                        : <div style={{padding:12,fontSize:24}}>{def.icon}</div>
+                      }
+                    </div>
+                    <div className="palette-info">
+                      <div className="palette-name">{def.icon} {def.name}</div>
+                      <div className="palette-desc">{def.description}</div>
+                      <div className="palette-sizes">
+                        {def.sizes.map(s=>(
+                          <span key={`${s.cols}x${s.rows}`} className="palette-size-tag">{s.cols}×{s.rows}</span>
+                        ))}
+                      </div>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        style={{width:"100%",justifyContent:"center",marginTop:4}}
+                        onClick={()=>addWidget(def.id)}
+                      >+ Add to home</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {availableWidgets.length===0 && (
+                <div style={{color:"var(--text3)",fontSize:11,fontFamily:"var(--mono)",padding:8}}>
+                  Enable apps in Settings to unlock more widgets.
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
-
-      {/* Journal — merged into home */}
-      {journalEnabled && (
-        <div style={{ marginTop:24 }}>
-          <div style={{ fontSize:11, color:"var(--text3)", fontFamily:"var(--mono)", letterSpacing:1,
-                        textTransform:"uppercase", marginBottom:10 }}>Personal Notes</div>
-
-          {/* Write box */}
-          <div className="card" style={{ marginBottom:14 }}>
-            <textarea
-              ref={textRef}
-              className="input"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="Write a note, thought, or log… (Ctrl+Enter to save)"
-              rows={3}
-              style={{ width:"100%", resize:"vertical", marginBottom:8, fontFamily:"var(--mono)", fontSize:12 }}
-            />
-            <div style={{ display:"flex", justifyContent:"flex-end", gap:8 }}>
-              {draft && (
-                <button className="btn btn-ghost btn-sm" onClick={() => setDraft("")}>Clear</button>
-              )}
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={submitEntry}
-                disabled={posting || !draft.trim()}
-              >
-                {posting ? "Saving…" : "Save note"}
-              </button>
-            </div>
-          </div>
-
-          {/* Recent entries */}
-          {entries.length === 0 && (
-            <div className="no-data" style={{ padding:"16px 0" }}>No notes yet</div>
-          )}
-          {entries.map(e => (
-            <div key={e.id} className="card"
-                 style={{ marginBottom:8, padding:"10px 14px", cursor:"pointer" }}
-                 onClick={() => setExpanded(ex => ex === e.id ? null : e.id)}>
-              <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:"var(--text3)", fontFamily:"var(--mono)",
-                                marginBottom:4 }}>
-                    {new Date(e.ts).toLocaleDateString("en-GB", {
-                      weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"
-                    })} · {timeAgo(e.ts)}
-                    {e.topic && e.topic !== "journal" && (
-                      <span style={{ marginLeft:8, color:"var(--cyan)", fontSize:10 }}>{e.topic}</span>
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize:13, color:"var(--text)", lineHeight:1.5, whiteSpace:"pre-wrap",
-                    overflow: expanded === e.id ? "visible" : "hidden",
-                    display:  expanded === e.id ? "block" : "-webkit-box",
-                    WebkitLineClamp: expanded === e.id ? "unset" : 2,
-                    WebkitBoxOrient: "vertical",
-                  }}>
-                    {e.content}
-                  </div>
-                </div>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={ev => { ev.stopPropagation(); deleteEntry(e.id); }}
-                  style={{ flexShrink:0, padding:"2px 7px", fontSize:11 }}
-                  title="Delete"
-                >✕</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
