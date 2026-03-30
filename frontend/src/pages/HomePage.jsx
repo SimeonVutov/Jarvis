@@ -237,8 +237,65 @@ function HomePage({ enabledApps }) {
 
   function removeWidget(iid) { persist(layoutRef.current.filter(w => w.instanceId !== iid)); }
 
+  // After resizing a widget, any widget whose cells now overlap the resized one
+  // is moved to the next free position (push-down, no overlap allowed).
+  function resolveOverlaps(layout) {
+    // Process in order: resized widget is already placed; fix the rest
+    const result = [];
+    const occ = new Set();
+
+    // Helper: find first free spot for cols×rows
+    function firstFree(cols, rows) {
+      for (let r = 0; r < 100; r++)
+        for (let c = 0; c <= COLS - cols; c++) {
+          let ok = true;
+          L: for (let dr = 0; dr < rows; dr++)
+            for (let dc = 0; dc < cols; dc++)
+              if (occ.has(`${r+dr},${c+dc}`)) { ok = false; break L; }
+          if (ok) return { gridRow: r, gridCol: c };
+        }
+      return { gridRow: 0, gridCol: 0 };
+    }
+
+    for (const w of layout) {
+      const cols = w.cols || 4;
+      const rows = w.rows || 1;
+      let gr = w.gridRow ?? 0;
+      let gc = w.gridCol ?? 0;
+
+      // Check if this widget's current position overlaps anything already placed
+      let conflicts = false;
+      if (gc + cols > COLS) { conflicts = true; }
+      else {
+        for (let dr = 0; dr < rows && !conflicts; dr++)
+          for (let dc = 0; dc < cols && !conflicts; dc++)
+            if (occ.has(`${gr+dr},${gc+dc}`)) conflicts = true;
+      }
+
+      if (conflicts) {
+        const pos = firstFree(cols, rows);
+        gr = pos.gridRow; gc = pos.gridCol;
+      }
+
+      for (let dr = 0; dr < rows; dr++)
+        for (let dc = 0; dc < cols; dc++)
+          occ.add(`${gr+dr},${gc+dc}`);
+
+      result.push({ ...w, gridRow: gr, gridCol: gc });
+    }
+    return result;
+  }
+
   function resizeWidget(iid, cols, rows) {
-    persist(layoutRef.current.map(w => w.instanceId === iid ? { ...w, cols, rows } : w));
+    // Apply new size to the target widget first, then resolve any overlaps
+    const updated = layoutRef.current.map(w =>
+      w.instanceId === iid ? { ...w, cols, rows } : w
+    );
+    // Put resized widget first in the resolve pass so it keeps its position
+    const resized  = updated.find(w => w.instanceId === iid);
+    const others   = updated.filter(w => w.instanceId !== iid);
+    const resolved = resolveOverlaps([resized, ...others]);
+    persist(resolved);
     setSizeOf(null);
   }
 
