@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="/css/layout.css">
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/css/widgets.css">
 
   <!-- React, Babel (in-browser JSX transform), Markdown -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
@@ -29,6 +30,7 @@
   <!-- Plain JS helpers — loaded before JSX so globals are available -->
   <script src="/src/api.js"></script>
   <script src="/src/utils.js"></script>
+  <script src="/src/widgets.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -47,6 +49,9 @@
   <script type="text/babel" src="/src/components/Sidebar.jsx"></script>
   <script type="text/babel" src="/src/components/FitnessChart.jsx"></script>
   <script type="text/babel" src="/src/components/FileEditorModal.jsx"></script>
+
+  <!-- Widget components (must load before HomePage) -->
+  <script type="text/babel" src="/src/components/Widgets.jsx"></script>
 
   <!-- Page components -->
   <script type="text/babel" src="/src/pages/HomePage.jsx"></script>
