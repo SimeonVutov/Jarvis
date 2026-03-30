@@ -1,33 +1,37 @@
-// HomePage.jsx — Free-form widget grid with live drag preview
+// HomePage.jsx — Free-form widget grid
 //
-// Architecture:
-//   - Each widget stores explicit gridCol + gridRow (free-form, gaps allowed)
-//   - VISUAL overlay: z-index below widgets, pointer-events:none — shows colored cells
-//   - CAPTURE overlay: single transparent div, z-index ABOVE widgets, only active
-//     while dragging. dragover fires on it continuously; we compute the hovered cell
-//     from e.clientX/Y against the grid's bounding rect. This is the only reliable
-//     way to track mouse position during an HTML5 drag (mousemove doesn't fire).
-//   - On drop: place widget at hovered cell if valid, persist to backend.
+// DRAG ARCHITECTURE:
+//   Grid → grid moves: pointer events (pointerdown/move/up on window).
+//     pointermove ALWAYS fires. No HTML5 drag, no stale closures.
+//     Widget fades to 0.3 opacity while dragging, grid shows live overlay.
+//
+//   Palette → grid adds: HTML5 drag (dragstart on palette card).
+//     Wrap container has onDragOver + onDrop — these receive events via
+//     bubbling (no capture div needed, no z-index issues).
+//
+//   Both paths write to refs before committing so state is always current.
+//
+// LAYOUT: each item stores explicit gridRow + gridCol. CSS grid uses
+//   grid-column: col+1 / span cols; grid-row: row+1 / span rows.
+//   No auto-flow — gaps are intentional and allowed.
 
 const { useState, useEffect, useRef, useMemo } = React;
 
 const COLS  = 12;
-const ROW_H = 140;   // px — must match grid-auto-rows in CSS
-const GAP   = 12;    // px — must match gap in CSS
-const PAD   = 16;    // px — left/right padding of .widget-grid
+const ROW_H = 140;   // must match grid-auto-rows in widgets.css
+const GAP   = 12;    // must match gap in widgets.css
+const PAD   = 16;    // left+right padding of .widget-grid
 
-// ── Migrate old layout items (no gridCol/gridRow) ──────────────────────
+// ── Migrate old items (no gridCol/gridRow) to explicit positions ───────
 function migrateLayout(raw) {
   const occ = new Set();
-
   function tryPlace(cols, rows) {
-    for (let r = 0; r < 100; r++) {
+    for (let r = 0; r < 100; r++)
       for (let c = 0; c <= COLS - cols; c++) {
         let ok = true;
-        outerCheck:
-        for (let dr = 0; dr < rows; dr++)
+        L: for (let dr = 0; dr < rows; dr++)
           for (let dc = 0; dc < cols; dc++)
-            if (occ.has(`${r+dr},${c+dc}`)) { ok = false; break outerCheck; }
+            if (occ.has(`${r+dr},${c+dc}`)) { ok = false; break L; }
         if (ok) {
           for (let dr = 0; dr < rows; dr++)
             for (let dc = 0; dc < cols; dc++)
@@ -35,10 +39,8 @@ function migrateLayout(raw) {
           return { gridRow: r, gridCol: c };
         }
       }
-    }
     return { gridRow: 0, gridCol: 0 };
   }
-
   return raw.map(item => {
     if (item.gridCol != null && item.gridRow != null) {
       for (let dr = 0; dr < (item.rows||1); dr++)
@@ -46,31 +48,29 @@ function migrateLayout(raw) {
           occ.add(`${item.gridRow+dr},${item.gridCol+dc}`);
       return item;
     }
-    return { ...item, ...tryPlace(item.cols || 4, item.rows || 1) };
+    return { ...item, ...tryPlace(item.cols||4, item.rows||1) };
   });
 }
 
-// ── Build set of occupied "row,col" cells (optionally exclude one widget) ─
+// ── Build set of occupied "row,col" strings ────────────────────────────
 function buildOccupied(layout, excludeId = null) {
   const occ = new Set();
-  for (const item of layout) {
-    if (item.instanceId === excludeId) continue;
-    if (item.gridCol == null) continue;
-    for (let r = item.gridRow; r < item.gridRow + (item.rows||1); r++)
-      for (let c = item.gridCol; c < item.gridCol + (item.cols||4); c++)
+  for (const w of layout) {
+    if (w.instanceId === excludeId || w.gridCol == null) continue;
+    for (let r = w.gridRow; r < w.gridRow + (w.rows||1); r++)
+      for (let c = w.gridCol; c < w.gridCol + (w.cols||4); c++)
         occ.add(`${r},${c}`);
   }
   return occ;
 }
 
-// ── Convert mouse event to grid cell ──────────────────────────────────
-// gridEl: the .widget-grid-wrap element (scrollable container)
-function mouseToCell(e, gridEl) {
-  if (!gridEl) return null;
-  const rect  = gridEl.getBoundingClientRect();
+// ── Convert clientX/Y to {row,col} relative to grid wrap ──────────────
+function mouseToCell(clientX, clientY, wrapEl) {
+  if (!wrapEl) return null;
+  const rect  = wrapEl.getBoundingClientRect();
   const cellW = (rect.width - PAD * 2 - GAP * (COLS - 1)) / COLS;
-  const x = e.clientX - rect.left - PAD;
-  const y = e.clientY - rect.top  + gridEl.scrollTop;
+  const x = clientX - rect.left - PAD;
+  const y = clientY - rect.top  + wrapEl.scrollTop;
   if (x < 0 || y < 0) return null;
   return {
     col: Math.max(0, Math.min(COLS - 1, Math.floor(x / (cellW + GAP)))),
@@ -78,22 +78,21 @@ function mouseToCell(e, gridEl) {
   };
 }
 
-// ── Visual grid overlay ────────────────────────────────────────────────
-// Sits BELOW widgets (z-index 1, pointerEvents none).
-// Shows: occupied=faint red, hover footprint=green/red, free=faint cyan.
-function VisualOverlay({ layout, excludeId, dragCols, dragRows, hoverCell, totalRows }) {
-  const occ = useMemo(
-    () => buildOccupied(layout, excludeId),
-    [layout, excludeId]
-  );
+// ── Check if dragCols×dragRows fits at (row,col) ───────────────────────
+function fitsAt(occ, row, col, dragCols, dragRows) {
+  if (col + dragCols > COLS) return false;
+  for (let dr = 0; dr < dragRows; dr++)
+    for (let dc = 0; dc < dragCols; dc++)
+      if (occ.has(`${row+dr},${col+dc}`)) return false;
+  return true;
+}
 
+// ── Visual grid overlay ────────────────────────────────────────────────
+function GridOverlay({ layout, excludeId, dragCols, dragRows, hoverCell, totalRows }) {
+  const occ  = useMemo(() => buildOccupied(layout, excludeId), [layout, excludeId]);
   const fits = useMemo(() => {
     if (!hoverCell) return null;
-    if (hoverCell.col + dragCols > COLS) return false;
-    for (let dr = 0; dr < dragRows; dr++)
-      for (let dc = 0; dc < dragCols; dc++)
-        if (occ.has(`${hoverCell.row+dr},${hoverCell.col+dc}`)) return false;
-    return true;
+    return fitsAt(occ, hoverCell.row, hoverCell.col, dragCols, dragRows);
   }, [hoverCell, occ, dragCols, dragRows]);
 
   const cells = [];
@@ -103,201 +102,227 @@ function VisualOverlay({ layout, excludeId, dragCols, dragRows, hoverCell, total
       const inFP  = hoverCell &&
         r >= hoverCell.row && r < hoverCell.row + dragRows &&
         c >= hoverCell.col && c < hoverCell.col + dragCols;
-
       let bg, border;
-      if (inFP && fits === true) {
-        bg = "rgba(0,200,240,.22)"; border = "2px solid rgba(0,200,240,.85)";
-      } else if (inFP && fits === false) {
-        bg = "rgba(240,64,96,.25)"; border = "2px solid rgba(240,64,96,.75)";
-      } else if (isOcc) {
-        bg = "rgba(240,64,96,.06)"; border = "1px dashed rgba(240,64,96,.22)";
-      } else {
-        bg = "rgba(0,200,240,.025)"; border = "1px dashed rgba(0,200,240,.13)";
-      }
-
+      if      (inFP && fits === true)  { bg="rgba(0,200,240,.22)";   border="2px solid rgba(0,200,240,.85)"; }
+      else if (inFP && fits === false) { bg="rgba(240,64,96,.25)";   border="2px solid rgba(240,64,96,.75)"; }
+      else if (isOcc)                  { bg="rgba(240,64,96,.06)";   border="1px dashed rgba(240,64,96,.22)"; }
+      else                             { bg="rgba(0,200,240,.025)";  border="1px dashed rgba(0,200,240,.13)"; }
       cells.push(
         <div key={`${r}-${c}`} style={{
-          gridColumn: `${c+1}`,
-          gridRow:    `${r+1}`,
-          background: bg,
-          border,
-          borderRadius: 8,
+          gridColumn: `${c+1}`, gridRow: `${r+1}`,
+          background: bg, border, borderRadius: 8,
           transition: "background .07s, border-color .07s",
         }} />
       );
     }
   }
-
   return (
     <div style={{
-      position: "absolute",
-      top: 0, left: 0, right: 0,
-      display: "grid",
-      gridTemplateColumns: `repeat(${COLS}, 1fr)`,
-      gridTemplateRows: `repeat(${totalRows}, ${ROW_H}px)`,
-      gap: GAP,
-      padding: `0 ${PAD}px`,
-      zIndex: 1,          // below widgets
-      pointerEvents: "none",
+      position:"absolute", top:0, left:0, right:0,
+      display:"grid",
+      gridTemplateColumns:`repeat(${COLS},1fr)`,
+      gridTemplateRows:`repeat(${totalRows},${ROW_H}px)`,
+      gap:GAP, padding:`0 ${PAD}px`,
+      zIndex:1, pointerEvents:"none",
     }}>
       {cells}
     </div>
   );
 }
 
-// ── HomePage ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════
+// HomePage
+// ══════════════════════════════════════════════════════════════════════
 function HomePage({ enabledApps }) {
   const [layout,    setLayout]    = useState(null);
   const [editMode,  setEditMode]  = useState(false);
-  const [dragId,    setDragId]    = useState(null);
-  const [palDragId, setPalDragId] = useState(null);
-  const [dragSize,  setDragSize]  = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
   const [sizeOf,    setSizeOf]    = useState(null);
-  const wrapRef = useRef(null);
 
-  // Refs mirror state — drop handler reads these so it always has current values
-  // (React state captured in closures is stale by the time drop fires)
-  const layoutRef    = useRef(null);
-  const dragIdRef    = useRef(null);
-  const palDragIdRef = useRef(null);
-  const dragSizeRef  = useRef(null);
-  const hoverCellRef = useRef(null);
-  useEffect(() => { layoutRef.current    = layout;    }, [layout]);
-  useEffect(() => { dragIdRef.current    = dragId;    }, [dragId]);
-  useEffect(() => { palDragIdRef.current = palDragId; }, [palDragId]);
-  useEffect(() => { dragSizeRef.current  = dragSize;  }, [dragSize]);
-  useEffect(() => { hoverCellRef.current = hoverCell; }, [hoverCell]);
+  // Pointer-drag state (grid→grid moves)
+  const [ptrDragId,   setPtrDragId]   = useState(null);  // instanceId
+  const [ptrDragSize, setPtrDragSize] = useState(null);  // {cols,rows}
 
-  const isDragging = dragId !== null || palDragId !== null;
+  // Refs — always current, safe to read inside event listeners
+  const layoutRef      = useRef(null);
+  const ptrDragIdRef   = useRef(null);
+  const ptrDragSizeRef = useRef(null);
+  const palDragIdRef   = useRef(null);   // for HTML5 palette drag
+  const palDragSizeRef = useRef(null);
+  const hoverCellRef   = useRef(null);
+  const wrapRef        = useRef(null);
 
-  // ── Load layout ──────────────────────────────────────────────────────
+  const isDragging = ptrDragId !== null || palDragIdRef.current !== null;
+
+  // ── Load ─────────────────────────────────────────────────────────────
   useEffect(() => {
     api("/api/home/layout")
       .then(d => {
         const raw = d.layout?.length ? d.layout : [...DEFAULT_LAYOUT];
-        setLayout(migrateLayout(raw));
+        const ml  = migrateLayout(raw);
+        setLayout(ml);
+        layoutRef.current = ml;
       })
-      .catch(() => setLayout(migrateLayout([...DEFAULT_LAYOUT])));
+      .catch(() => {
+        const ml = migrateLayout([...DEFAULT_LAYOUT]);
+        setLayout(ml);
+        layoutRef.current = ml;
+      });
   }, []);
 
-  // Close size popover on outside click
+  // Keep layoutRef current whenever layout changes
+  useEffect(() => { layoutRef.current = layout; }, [layout]);
+
+  // ── Close size popover on outside click ──────────────────────────────
   useEffect(() => {
-    function close(e) {
-      if (!e.target.closest?.(".size-popover")) setSizeOf(null);
-    }
+    function close(e) { if (!e.target.closest?.(".size-popover")) setSizeOf(null); }
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, []);
 
-  // Clear drag state on dragend (fires even if drop was cancelled)
+  // ── Pointer-drag: pointermove + pointerup on window ──────────────────
   useEffect(() => {
-    function onEnd() {
-      setDragId(null); setPalDragId(null);
-      setDragSize(null); setHoverCell(null);
+    function onMove(e) {
+      if (!ptrDragIdRef.current && !palDragIdRef.current) return;
+      const cell = mouseToCell(e.clientX, e.clientY, wrapRef.current);
+      hoverCellRef.current = cell;
+      setHoverCell(cell ? { ...cell } : null);
     }
-    document.addEventListener("dragend", onEnd);
-    return () => document.removeEventListener("dragend", onEnd);
-  }, []);
 
+    function onUp(e) {
+      const dragId = ptrDragIdRef.current;
+      if (!dragId) return;  // not a pointer drag
+
+      const cell   = hoverCellRef.current;
+      const layout = layoutRef.current;
+      const size   = ptrDragSizeRef.current;
+
+      if (cell && layout && size) {
+        const { row, col }   = cell;
+        const { cols, rows } = size;
+        const occ = buildOccupied(layout, dragId);
+        if (fitsAt(occ, row, col, cols, rows)) {
+          const nl = layout.map(w =>
+            w.instanceId === dragId ? { ...w, gridRow: row, gridCol: col } : w
+          );
+          setLayout(nl);
+          layoutRef.current = nl;
+          jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
+        }
+      }
+
+      // clear
+      ptrDragIdRef.current   = null;
+      ptrDragSizeRef.current = null;
+      hoverCellRef.current   = null;
+      setPtrDragId(null);
+      setPtrDragSize(null);
+      setHoverCell(null);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup",   onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup",   onUp);
+    };
+  }, []);  // runs once — reads from refs, never stale
+
+  // ── Persist ──────────────────────────────────────────────────────────
   function persist(nl) {
     setLayout(nl);
+    layoutRef.current = nl;
     jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
   }
 
-  function removeWidget(iid) { persist(layout.filter(w => w.instanceId !== iid)); }
+  function removeWidget(iid) { persist(layoutRef.current.filter(w => w.instanceId !== iid)); }
 
   function resizeWidget(iid, cols, rows) {
-    persist(layout.map(w => w.instanceId === iid ? { ...w, cols, rows } : w));
+    persist(layoutRef.current.map(w => w.instanceId === iid ? { ...w, cols, rows } : w));
     setSizeOf(null);
   }
 
-  // ── Drag start (grid widget) ─────────────────────────────────────────
-  function onWidgetDragStart(e, item) {
-    e.stopPropagation();
-    setDragId(item.instanceId);
-    setDragSize({ cols: item.cols, rows: item.rows });
-    e.dataTransfer.effectAllowed = "move";
+  // ── Pointer drag start (grid widget) ─────────────────────────────────
+  function onWidgetPointerDown(e, item) {
+    if (!editMode) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    ptrDragIdRef.current   = item.instanceId;
+    ptrDragSizeRef.current = { cols: item.cols, rows: item.rows };
+    setPtrDragId(item.instanceId);
+    setPtrDragSize({ cols: item.cols, rows: item.rows });
   }
 
-  // ── Drag start (palette) ─────────────────────────────────────────────
+  // ── HTML5 drag: palette card ─────────────────────────────────────────
   function onPaletteDragStart(e, widgetId) {
     const def = WIDGET_REGISTRY.find(w => w.id === widgetId);
-    setPalDragId(widgetId);
-    setDragSize(def ? { cols: def.defaultCols, rows: def.defaultRows } : { cols: 4, rows: 1 });
+    palDragIdRef.current   = widgetId;
+    palDragSizeRef.current = def ? { cols: def.defaultCols, rows: def.defaultRows } : { cols:4, rows:1 };
     e.dataTransfer.effectAllowed = "copy";
   }
 
-  // ── Capture layer: dragover ─────────────────────────────────────────
-  // Fires continuously — update ref AND state (ref for drop, state for visual)
-  function onCaptureDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    const cell = mouseToCell(e, wrapRef.current);
-    hoverCellRef.current = cell;   // update ref immediately (sync)
-    setHoverCell(cell);            // update state for visual overlay (async ok)
+  function onPaletteDragEnd() {
+    palDragIdRef.current   = null;
+    palDragSizeRef.current = null;
+    hoverCellRef.current   = null;
+    setHoverCell(null);
   }
 
-  // ── Capture layer: drop ──────────────────────────────────────────────
-  // MUST read from refs — React state in this closure is stale at drop time
-  function onCaptureDrop(e) {
+  // ── Wrap: dragover + drop (for palette → grid, via bubbling) ─────────
+  function onWrapDragOver(e) {
     e.preventDefault();
-    // Re-compute cell from mouse coords at drop moment (most reliable)
-    const cell     = mouseToCell(e, wrapRef.current) || hoverCellRef.current;
-    const layout_  = layoutRef.current;
-    const dragId_  = dragIdRef.current;
-    const palDrag_ = palDragIdRef.current;
-    const size_    = dragSizeRef.current;
+    e.dataTransfer.dropEffect = "copy";
+    if (!palDragIdRef.current) return;
+    const cell = mouseToCell(e.clientX, e.clientY, wrapRef.current);
+    hoverCellRef.current = cell;
+    setHoverCell(cell ? { ...cell } : null);
+  }
 
-    if (!cell || !size_ || !layout_) return;
+  function onWrapDrop(e) {
+    e.preventDefault();
+    const palId = palDragIdRef.current;
+    if (!palId) return;
 
-    const { row, col }   = cell;
-    const { cols, rows } = size_;
+    const cell   = mouseToCell(e.clientX, e.clientY, wrapRef.current) || hoverCellRef.current;
+    const layout = layoutRef.current;
+    const size   = palDragSizeRef.current;
 
-    if (col + cols > COLS) return;
-
-    const occ = buildOccupied(layout_, dragId_ ?? undefined);
-    for (let dr = 0; dr < rows; dr++)
-      for (let dc = 0; dc < cols; dc++)
-        if (occ.has(`${row+dr},${col+dc}`)) return;
-
-    if (dragId_) {
-      persist(layout_.map(w =>
-        w.instanceId === dragId_ ? { ...w, gridRow: row, gridCol: col } : w
-      ));
-    } else if (palDrag_) {
-      const def = WIDGET_REGISTRY.find(w => w.id === palDrag_);
-      if (!def) return;
-      persist([...layout_, {
-        instanceId: `w${Date.now()}`,
-        widgetId: palDrag_,
-        cols: def.defaultCols,
-        rows: def.defaultRows,
-        gridRow: row,
-        gridCol: col,
-      }]);
+    if (cell && layout && size) {
+      const { row, col }   = cell;
+      const { cols, rows } = size;
+      const occ = buildOccupied(layout);
+      if (fitsAt(occ, row, col, cols, rows)) {
+        const def = WIDGET_REGISTRY.find(w => w.id === palId);
+        if (def) {
+          const nl = [...layout, {
+            instanceId: `w${Date.now()}`,
+            widgetId: palId,
+            cols: def.defaultCols,
+            rows: def.defaultRows,
+            gridRow: row,
+            gridCol: col,
+          }];
+          setLayout(nl);
+          layoutRef.current = nl;
+          jsonPut("/api/home/layout", { layout: nl }).catch(() => {});
+        }
+      }
     }
 
-    setDragId(null); setPalDragId(null);
-    setDragSize(null); setHoverCell(null);
-    dragIdRef.current = null; palDragIdRef.current = null;
-    dragSizeRef.current = null; hoverCellRef.current = null;
+    palDragIdRef.current   = null;
+    palDragSizeRef.current = null;
+    hoverCellRef.current   = null;
+    setHoverCell(null);
   }
 
+  // ── Add widget at first free spot (palette button click) ─────────────
   function addWidget(widgetId) {
-    const def = WIDGET_REGISTRY.find(w => w.id === widgetId);
+    const def    = WIDGET_REGISTRY.find(w => w.id === widgetId);
     if (!def) return;
-    // Find first free spot
-    const occ = buildOccupied(layout);
-    let placed = false;
-    for (let r = 0; r < 20 && !placed; r++) {
-      for (let c = 0; c <= COLS - def.defaultCols && !placed; c++) {
-        let ok = true;
-        outerAdd:
-        for (let dr = 0; dr < def.defaultRows; dr++)
-          for (let dc = 0; dc < def.defaultCols; dc++)
-            if (occ.has(`${r+dr},${c+dc}`)) { ok = false; break outerAdd; }
-        if (ok) {
+    const layout = layoutRef.current || [];
+    const occ    = buildOccupied(layout);
+    for (let r = 0; r < 20; r++)
+      for (let c = 0; c <= COLS - def.defaultCols; c++)
+        if (fitsAt(occ, r, c, def.defaultCols, def.defaultRows)) {
           persist([...layout, {
             instanceId: `w${Date.now()}`,
             widgetId,
@@ -306,19 +331,19 @@ function HomePage({ enabledApps }) {
             gridRow: r,
             gridCol: c,
           }]);
-          placed = true;
+          return;
         }
-      }
-    }
   }
 
   if (!layout) return <PageLoading />;
 
-  // Compute overlay row count
-  const totalRows = Math.max(
-    8,
-    ...layout.map(i => (i.gridRow || 0) + (i.rows || 1))
-  ) + 3;
+  const totalRows = Math.max(8, ...layout.map(i => (i.gridRow||0) + (i.rows||1))) + 3;
+  const isPtrDrag = ptrDragId !== null;
+  const isPalDrag = false; // we track via ref, use it for overlay
+  const showOverlay = isPtrDrag || (ptrDragId === null && hoverCell !== null);
+
+  const dragCols = ptrDragSize?.cols || palDragSizeRef.current?.cols || 1;
+  const dragRows = ptrDragSize?.rows || palDragSizeRef.current?.rows || 1;
 
   const availableWidgets = WIDGET_REGISTRY.filter(def =>
     !def.app || !enabledApps || enabledApps.has(def.app)
@@ -326,130 +351,111 @@ function HomePage({ enabledApps }) {
 
   return (
     <div className="home-root">
-      {/* ── Top bar ── */}
+      {/* Top bar */}
       <div className="home-topbar">
         {editMode && (
           <span style={{ fontSize:10, color:"var(--text3)", fontFamily:"var(--mono)" }}>
-            Drag to move · resize with size button · drag from library to add
+            Click &amp; drag widgets to move · drag from library to add · × to remove
           </span>
         )}
         <button
-          className={`btn ${editMode ? "btn-primary" : "btn-ghost"} btn-sm`}
-          onClick={e => { e.stopPropagation(); setEditMode(m => !m); setSizeOf(null); }}
+          className={`btn ${editMode?"btn-primary":"btn-ghost"} btn-sm`}
+          onClick={e => { e.stopPropagation(); setEditMode(m=>!m); setSizeOf(null); }}
         >
           {editMode ? "✓ Done editing" : "⊞ Customize"}
         </button>
       </div>
 
-      {/* ── Body ── */}
+      {/* Body */}
       <div className="home-body">
-        <div ref={wrapRef} className="widget-grid-wrap">
-
-          {/* VISUAL overlay — always rendered during drag, sits below widgets */}
-          {isDragging && dragSize && (
-            <VisualOverlay
+        <div
+          ref={wrapRef}
+          className="widget-grid-wrap"
+          onDragOver={onWrapDragOver}
+          onDrop={onWrapDrop}
+          onDragLeave={e => {
+            // Only clear hover when truly leaving the wrap
+            if (!wrapRef.current?.contains(e.relatedTarget)) {
+              hoverCellRef.current = null;
+              setHoverCell(null);
+            }
+          }}
+        >
+          {/* Visual overlay — below widgets, pointer-events:none */}
+          {hoverCell && (
+            <GridOverlay
               layout={layout}
-              excludeId={dragId}
-              dragCols={dragSize.cols}
-              dragRows={dragSize.rows}
+              excludeId={ptrDragId}
+              dragCols={dragCols}
+              dragRows={dragRows}
               hoverCell={hoverCell}
               totalRows={totalRows}
             />
           )}
 
-          {/* CAPTURE overlay — transparent, sits ABOVE widgets during drag */}
-          {/* This is the only thing that receives dragover; calculates cell from mouse coords */}
-          {isDragging && (
-            <div
-              style={{
-                position: "absolute",
-                top: 0, left: 0, right: 0,
-                height: `${totalRows * (ROW_H + GAP)}px`,
-                zIndex: 50,                      // above everything
-                background: "transparent",
-                cursor: "grabbing",
-              }}
-              onDragOver={onCaptureDragOver}
-              onDrop={onCaptureDrop}
-            />
-          )}
-
-          {/* Widget grid — explicit positioning, no auto-flow */}
+          {/* Widget grid — explicit CSS grid, no auto-flow */}
           <div
             className="widget-grid"
-            style={{
-              position: "relative",
-              zIndex: 10,
-              gridAutoFlow: "unset",             // no auto-flow, explicit placement only
-            }}
+            style={{ position:"relative", zIndex:10, gridAutoFlow:"unset" }}
           >
             {layout.map(item => {
               const def  = WIDGET_REGISTRY.find(w => w.id === item.widgetId);
               const Comp = WIDGET_COMPONENTS[item.widgetId];
               if (!def || !Comp) return null;
-
-              const isBeingDragged = item.instanceId === dragId;
-
+              const isDragging = item.instanceId === ptrDragId;
               return (
                 <div
                   key={item.instanceId}
-                  className={[
-                    "widget-cell",
-                    isBeingDragged ? "dragging" : "",
-                  ].filter(Boolean).join(" ")}
+                  className={["widget-cell", isDragging?"dragging":""].filter(Boolean).join(" ")}
                   style={{
-                    gridColumn: `${(item.gridCol ?? 0) + 1} / span ${item.cols}`,
-                    gridRow:    `${(item.gridRow ?? 0) + 1} / span ${item.rows}`,
-                    opacity: isBeingDragged ? 0.3 : 1,
-                    // Lower z-index during drag so capture overlay is on top
-                    zIndex: isDragging ? 5 : "auto",
+                    gridColumn: `${(item.gridCol??0)+1} / span ${item.cols}`,
+                    gridRow:    `${(item.gridRow??0)+1} / span ${item.rows}`,
+                    opacity:    isDragging ? 0.3 : 1,
+                    cursor:     editMode   ? "grab" : "default",
+                    transition: "opacity .15s",
                   }}
-                  draggable={editMode}
-                  onDragStart={e => onWidgetDragStart(e, item)}
+                  onPointerDown={e => onWidgetPointerDown(e, item)}
                 >
                   {editMode && (
                     <div className="widget-bar" onClick={e => e.stopPropagation()}>
                       <span className="widget-drag-handle">⠿</span>
                       <span className="widget-bar-name">{def.name}</span>
                       <div className="widget-bar-actions">
-                        <div style={{ position: "relative" }}>
+                        <div style={{ position:"relative" }}>
                           <button
                             className="widget-bar-btn"
                             onClick={e => {
                               e.stopPropagation();
-                              setSizeOf(s => s === item.instanceId ? null : item.instanceId);
+                              setSizeOf(s => s===item.instanceId ? null : item.instanceId);
                             }}
                           >{item.cols}×{item.rows}</button>
-                          {sizeOf === item.instanceId && (
-                            <div className="size-popover" onClick={e => e.stopPropagation()}>
-                              {def.sizes.map(s => (
+                          {sizeOf===item.instanceId && (
+                            <div className="size-popover" onClick={e=>e.stopPropagation()}>
+                              {def.sizes.map(s=>(
                                 <button
                                   key={`${s.cols}x${s.rows}`}
                                   className={`size-opt${s.cols===item.cols&&s.rows===item.rows?" size-active":""}`}
-                                  onClick={() => resizeWidget(item.instanceId, s.cols, s.rows)}
+                                  onClick={()=>resizeWidget(item.instanceId,s.cols,s.rows)}
                                 >
-                                  <span style={{ fontFamily:"var(--mono)" }}>{s.cols}×{s.rows}</span>
+                                  <span style={{fontFamily:"var(--mono)"}}>{s.cols}×{s.rows}</span>
                                   <span>{s.label}</span>
                                 </button>
                               ))}
                             </div>
                           )}
                         </div>
-                        <button
-                          className="widget-bar-btn widget-remove"
-                          onClick={() => removeWidget(item.instanceId)}
-                        >×</button>
+                        <button className="widget-bar-btn widget-remove" onClick={()=>removeWidget(item.instanceId)}>×</button>
                       </div>
                     </div>
                   )}
-                  <div className="widget-content">
+                  <div className="widget-content" style={{ pointerEvents: ptrDragId ? "none" : "auto" }}>
                     <Comp cols={item.cols} rows={item.rows} enabledApps={enabledApps} />
                   </div>
                 </div>
               );
             })}
 
-            {layout.length === 0 && (
+            {layout.length===0 && (
               <div style={{ gridColumn:"span 12", textAlign:"center", padding:48, color:"var(--text3)", fontSize:13 }}>
                 No widgets yet. Click <strong style={{color:"var(--text)"}}>⊞ Customize</strong> to add some.
               </div>
@@ -457,9 +463,9 @@ function HomePage({ enabledApps }) {
           </div>
         </div>
 
-        {/* Palette panel */}
+        {/* Palette */}
         {editMode && (
-          <div className="widget-panel" onClick={e => e.stopPropagation()}>
+          <div className="widget-panel" onClick={e=>e.stopPropagation()}>
             <div className="widget-panel-head">Widget Library</div>
             <div className="widget-panel-scroll">
               {availableWidgets.map(def => {
@@ -469,12 +475,12 @@ function HomePage({ enabledApps }) {
                     key={def.id}
                     className="palette-card"
                     draggable
-                    onDragStart={e => onPaletteDragStart(e, def.id)}
-                    onDragEnd={() => { setPalDragId(null); setDragSize(null); setHoverCell(null); }}
+                    onDragStart={e=>onPaletteDragStart(e,def.id)}
+                    onDragEnd={onPaletteDragEnd}
                   >
                     <div className="palette-preview">
                       {Comp
-                        ? <Comp cols={def.defaultCols} rows={Math.min(def.defaultRows,2)} preview enabledApps={enabledApps} />
+                        ? <Comp cols={def.defaultCols} rows={Math.min(def.defaultRows,2)} preview enabledApps={enabledApps}/>
                         : <div style={{padding:12,fontSize:24}}>{def.icon}</div>
                       }
                     </div>
@@ -482,20 +488,20 @@ function HomePage({ enabledApps }) {
                       <div className="palette-name">{def.icon} {def.name}</div>
                       <div className="palette-desc">{def.description}</div>
                       <div className="palette-sizes">
-                        {def.sizes.map(s => (
+                        {def.sizes.map(s=>(
                           <span key={`${s.cols}x${s.rows}`} className="palette-size-tag">{s.cols}×{s.rows}</span>
                         ))}
                       </div>
                       <button
                         className="btn btn-primary btn-sm"
-                        style={{ width:"100%", justifyContent:"center", marginTop:4 }}
-                        onClick={() => addWidget(def.id)}
+                        style={{width:"100%",justifyContent:"center",marginTop:4}}
+                        onClick={()=>addWidget(def.id)}
                       >+ Add to home</button>
                     </div>
                   </div>
                 );
               })}
-              {availableWidgets.length === 0 && (
+              {availableWidgets.length===0 && (
                 <div style={{color:"var(--text3)",fontSize:11,fontFamily:"var(--mono)",padding:8}}>
                   Enable apps in Settings to unlock more widgets.
                 </div>
