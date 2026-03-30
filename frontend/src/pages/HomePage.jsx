@@ -149,12 +149,25 @@ function VisualOverlay({ layout, excludeId, dragCols, dragRows, hoverCell, total
 function HomePage({ enabledApps }) {
   const [layout,    setLayout]    = useState(null);
   const [editMode,  setEditMode]  = useState(false);
-  const [dragId,    setDragId]    = useState(null);   // instanceId being dragged (grid→grid)
-  const [palDragId, setPalDragId] = useState(null);   // widgetId being dragged (palette→grid)
-  const [dragSize,  setDragSize]  = useState(null);   // { cols, rows }
-  const [hoverCell, setHoverCell] = useState(null);   // { row, col } under cursor
+  const [dragId,    setDragId]    = useState(null);
+  const [palDragId, setPalDragId] = useState(null);
+  const [dragSize,  setDragSize]  = useState(null);
+  const [hoverCell, setHoverCell] = useState(null);
   const [sizeOf,    setSizeOf]    = useState(null);
-  const wrapRef = useRef(null);   // .widget-grid-wrap
+  const wrapRef = useRef(null);
+
+  // Refs mirror state — drop handler reads these so it always has current values
+  // (React state captured in closures is stale by the time drop fires)
+  const layoutRef    = useRef(null);
+  const dragIdRef    = useRef(null);
+  const palDragIdRef = useRef(null);
+  const dragSizeRef  = useRef(null);
+  const hoverCellRef = useRef(null);
+  useEffect(() => { layoutRef.current    = layout;    }, [layout]);
+  useEffect(() => { dragIdRef.current    = dragId;    }, [dragId]);
+  useEffect(() => { palDragIdRef.current = palDragId; }, [palDragId]);
+  useEffect(() => { dragSizeRef.current  = dragSize;  }, [dragSize]);
+  useEffect(() => { hoverCellRef.current = hoverCell; }, [hoverCell]);
 
   const isDragging = dragId !== null || palDragId !== null;
 
@@ -215,45 +228,49 @@ function HomePage({ enabledApps }) {
     e.dataTransfer.effectAllowed = "copy";
   }
 
-  // ── Capture layer: dragover ──────────────────────────────────────────
-  // This is the ONLY dragover handler that matters during drag.
-  // Fires continuously as mouse moves over the transparent top layer.
+  // ── Capture layer: dragover ─────────────────────────────────────────
+  // Fires continuously — update ref AND state (ref for drop, state for visual)
   function onCaptureDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const cell = mouseToCell(e, wrapRef.current);
-    setHoverCell(cell);
+    hoverCellRef.current = cell;   // update ref immediately (sync)
+    setHoverCell(cell);            // update state for visual overlay (async ok)
   }
 
   // ── Capture layer: drop ──────────────────────────────────────────────
+  // MUST read from refs — React state in this closure is stale at drop time
   function onCaptureDrop(e) {
     e.preventDefault();
-    if (!hoverCell || !dragSize) return;
+    // Re-compute cell from mouse coords at drop moment (most reliable)
+    const cell     = mouseToCell(e, wrapRef.current) || hoverCellRef.current;
+    const layout_  = layoutRef.current;
+    const dragId_  = dragIdRef.current;
+    const palDrag_ = palDragIdRef.current;
+    const size_    = dragSizeRef.current;
 
-    const { row, col } = hoverCell;
-    const { cols, rows } = dragSize;
+    if (!cell || !size_ || !layout_) return;
 
-    // Check bounds
+    const { row, col }   = cell;
+    const { cols, rows } = size_;
+
     if (col + cols > COLS) return;
 
-    // Check availability (excluding the widget being moved)
-    const occ = buildOccupied(layout, dragId ?? undefined);
+    const occ = buildOccupied(layout_, dragId_ ?? undefined);
     for (let dr = 0; dr < rows; dr++)
       for (let dc = 0; dc < cols; dc++)
-        if (occ.has(`${row+dr},${col+dc}`)) return; // blocked
+        if (occ.has(`${row+dr},${col+dc}`)) return;
 
-    if (dragId) {
-      // Move existing widget to new position
-      persist(layout.map(w =>
-        w.instanceId === dragId ? { ...w, gridRow: row, gridCol: col } : w
+    if (dragId_) {
+      persist(layout_.map(w =>
+        w.instanceId === dragId_ ? { ...w, gridRow: row, gridCol: col } : w
       ));
-    } else if (palDragId) {
-      // Add new widget from palette
-      const def = WIDGET_REGISTRY.find(w => w.id === palDragId);
+    } else if (palDrag_) {
+      const def = WIDGET_REGISTRY.find(w => w.id === palDrag_);
       if (!def) return;
-      persist([...layout, {
+      persist([...layout_, {
         instanceId: `w${Date.now()}`,
-        widgetId: palDragId,
+        widgetId: palDrag_,
         cols: def.defaultCols,
         rows: def.defaultRows,
         gridRow: row,
@@ -263,6 +280,8 @@ function HomePage({ enabledApps }) {
 
     setDragId(null); setPalDragId(null);
     setDragSize(null); setHoverCell(null);
+    dragIdRef.current = null; palDragIdRef.current = null;
+    dragSizeRef.current = null; hoverCellRef.current = null;
   }
 
   function addWidget(widgetId) {
