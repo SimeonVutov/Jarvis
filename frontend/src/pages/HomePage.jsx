@@ -417,7 +417,7 @@ function HomePage({ enabledApps }) {
                   onPointerDown={e => onWidgetPointerDown(e, item)}
                 >
                   {editMode && (
-                    <div className="widget-bar" onClick={e => e.stopPropagation()}>
+                    <div className="widget-bar" onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}>
                       <span className="widget-drag-handle">⠿</span>
                       <span className="widget-bar-name">{def.name}</span>
                       <div className="widget-bar-actions">
@@ -444,7 +444,7 @@ function HomePage({ enabledApps }) {
                             </div>
                           )}
                         </div>
-                        <button className="widget-bar-btn widget-remove" onClick={()=>removeWidget(item.instanceId)}>×</button>
+                        <button className="widget-bar-btn widget-remove" onPointerDown={e=>e.stopPropagation()} onClick={()=>removeWidget(item.instanceId)}>×</button>
                       </div>
                     </div>
                   )}
